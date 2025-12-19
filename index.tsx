@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import { ethers, BrowserProvider, Contract } from "ethers";
+import { ethers, BrowserProvider, Contract, JsonRpcProvider } from "ethers";
 import { 
   Search, 
   User, 
@@ -12,7 +12,8 @@ import {
   CornerDownRight,
   Wallet,
   Loader2,
-  Box
+  Box,
+  ExternalLink
 } from "lucide-react";
 
 // Add declaration for window.ethereum
@@ -25,11 +26,13 @@ declare global {
 // --- Configuration ---
 const BASE_CHAIN_ID_HEX = "0x2105"; // 8453
 const BASE_CHAIN_ID_DECIMAL = 8453;
+const BASE_RPC_URL = "https://mainnet.base.org";
 const BASE_EXPLORER = "https://basescan.org";
 
-// Official Base ENS Contracts
-const REGISTRY_ADDRESS = "0x03C4738Ee95aD7b091c01037cF66FD6217A213b2";
-const RESOLVER_ADDRESS = "0xC6d566A56A1aFf6508b41f6c90ff131615583BCD"; // Standard L2 Resolver
+// Official Base ENS Contracts - Wrapped in getAddress with lowercase input to avoid checksum errors
+// By providing lowercase, ethers will calculate and return the correct checksummed address format.
+const REGISTRY_ADDRESS = ethers.getAddress("0x03c4738ee95ad7b091c01037cf66fd6217a213b2");
+const RESOLVER_ADDRESS = ethers.getAddress("0xc6d566a56a1aff6508b41f6c90ff131615583bcd"); 
 
 // --- ABIs ---
 const REGISTRY_ABI = [
@@ -66,6 +69,138 @@ const Card = ({ children, className = "" }: { children?: React.ReactNode, classN
     {children}
   </div>
 );
+
+// --- PIXEL ART COMPONENTS ---
+
+const PixelCanvas = () => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Config
+    const w = canvas.width;
+    const h = canvas.height;
+    const pSize = 4; // Size of "pixel"
+    const cols = Math.ceil(w / pSize);
+    const rows = Math.ceil(h / pSize);
+
+    // Palette
+    const C_BG = '#000000';
+    const C_BLUE = '#0052FF';
+    const C_ORANGE = '#F97316'; // Tailwind Orange-500
+    const C_DARK_BLUE = '#172554';
+
+    // Clear
+    ctx.fillStyle = C_BG;
+    ctx.fillRect(0, 0, w, h);
+
+    // Procedural Terrain Generation
+    const terrain = new Float32Array(cols);
+    let yOff = rows * 0.7; // Start lower down
+    
+    for(let i = 0; i < cols; i++) {
+        const jaggedness = (Math.random() - 0.5) * 8; 
+        const slope = (Math.random() - 0.5) * 2; 
+        
+        yOff += jaggedness + slope;
+        
+        if(yOff < rows * 0.2) yOff = rows * 0.2 + 2; 
+        if(yOff > rows * 0.9) yOff = rows * 0.9 - 2;
+        
+        terrain[i] = yOff;
+    }
+
+    // Draw Terrain
+    for(let i = 0; i < cols; i++) {
+        const ceiling = terrain[i];
+        for(let j = 0; j < rows; j++) {
+            if (j > ceiling) {
+                const depth = j - ceiling;
+                const noise = Math.random();
+                
+                if (depth < 2 && noise > 0.3) {
+                     ctx.fillStyle = C_BLUE;
+                } else if (noise > 0.65) {
+                    ctx.fillStyle = C_ORANGE;
+                } else if (noise > 0.35) {
+                    ctx.fillStyle = C_BLUE;
+                } else {
+                    ctx.fillStyle = C_DARK_BLUE;
+                }
+                ctx.fillRect(i * pSize, j * pSize, pSize, pSize);
+            }
+        }
+    }
+    
+    // Add "Glitch" stars/particles
+    for(let k = 0; k < 80; k++) {
+        const rx = Math.floor(Math.random() * cols);
+        const ry = Math.floor(Math.random() * (rows * 0.6));
+        if (ry < terrain[rx]) {
+             ctx.fillStyle = Math.random() > 0.5 ? C_BLUE : C_ORANGE;
+             const starSize = Math.random() > 0.8 ? pSize * 2 : pSize;
+             ctx.fillRect(rx * pSize, ry * pSize, starSize, starSize);
+        }
+    }
+  }, []);
+
+  return (
+    <div className="w-full h-full min-h-[300px] bg-black relative overflow-hidden">
+        <canvas 
+            ref={canvasRef} 
+            width={600} 
+            height={600} 
+            className="w-full h-full object-cover" 
+            style={{ imageRendering: 'pixelated' }}
+        />
+        <div className="absolute top-4 right-4 flex flex-col gap-2 items-end">
+             <div className="flex items-center gap-1 text-white text-[10px] font-mono opacity-80 bg-black/50 px-2 py-1 rounded">
+                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                1.46 Mwei
+             </div>
+        </div>
+        <div className="absolute bottom-4 right-4 text-white text-[10px] font-mono opacity-50 rotate-90 origin-bottom-right translate-x-full whitespace-nowrap">
+            coinbase ■ base
+        </div>
+    </div>
+  );
+};
+
+const AdBanner = () => (
+    <div className="max-w-5xl mx-auto my-16 rounded-[2.5rem] overflow-hidden bg-[#F4F5F6] grid grid-cols-1 md:grid-cols-2 shadow-sm border border-gray-200 group">
+        <div className="p-12 flex flex-col justify-center relative">
+            <div className="absolute top-0 bottom-0 left-8 hidden sm:flex flex-col justify-between py-12 text-blue-600 font-mono text-xs font-bold tracking-[0.3em] uppercase opacity-60 select-none pointer-events-none">
+                <span className="rotate-180" style={{writingMode: 'vertical-rl'}}>Request</span>
+                <span className="rotate-180" style={{writingMode: 'vertical-rl'}}>For</span>
+                <span className="rotate-180" style={{writingMode: 'vertical-rl'}}>Startups</span>
+            </div>
+            <div className="sm:pl-16 text-center sm:text-left z-10">
+                <h2 className="text-6xl sm:text-7xl font-[900] tracking-tighter leading-[0.85] text-black mb-8 group-hover:scale-105 transition-transform duration-500 origin-left">
+                    Build<br/>
+                    Onchain
+                </h2>
+                <div className="space-y-6">
+                    <p className="text-gray-500 font-medium max-w-xs mx-auto sm:mx-0 leading-relaxed">
+                        In collaboration with Base and Coinbase Ventures, Y Combinator just announced Request for Startups: Fintech 3.0.
+                    </p>
+                    <a href="https://base.org" target="_blank" className="inline-flex items-center gap-2 bg-base-blue text-white px-8 py-4 rounded-full font-bold hover:bg-blue-700 transition-all hover:pr-10">
+                        Start Building <ArrowRight size={18} />
+                    </a>
+                </div>
+            </div>
+            <span className="absolute bottom-6 left-8 text-6xl font-[900] text-gray-200 -z-0 hidden sm:block">01</span>
+        </div>
+        <div className="h-full min-h-[350px] relative border-l border-white/20">
+            <PixelCanvas />
+        </div>
+    </div>
+);
+
+// --- MAIN APP ---
 
 const App = () => {
   // --- State ---
@@ -106,6 +241,26 @@ const App = () => {
     }
   };
 
+  // --- Reverse Resolution ---
+  useEffect(() => {
+    const performReverseResolution = async () => {
+      // Prioritize the connected provider, otherwise use the fixed Base RPC
+      const activeProvider = provider || new JsonRpcProvider(BASE_RPC_URL);
+      if (address) {
+        try {
+          // ENS standard lookupAddress
+          const name = await activeProvider.lookupAddress(address);
+          if (name && name.toLowerCase().endsWith('.base.eth')) {
+            setParentName(name);
+          }
+        } catch (err) {
+          console.debug("Reverse lookup failed:", err);
+        }
+      }
+    };
+    performReverseResolution();
+  }, [address, provider]);
+
   const switchToBase = async () => {
     if (!window.ethereum) return;
     try {
@@ -121,8 +276,8 @@ const App = () => {
             chainId: BASE_CHAIN_ID_HEX,
             chainName: 'Base',
             nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
-            rpcUrls: ['https://mainnet.base.org'],
-            blockExplorerUrls: ['https://basescan.org'],
+            rpcUrls: [BASE_RPC_URL],
+            blockExplorerUrls: [BASE_EXPLORER],
           }],
         });
       }
@@ -133,47 +288,57 @@ const App = () => {
 
   const handleSearch = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!searchTerm.includes('.')) return setSearchError("Please enter a valid name (e.g. jesse.base.eth)");
+    const query = searchTerm.trim().toLowerCase();
+    if (!query.includes('.')) return setSearchError("Please enter a valid name (e.g. jesse.base.eth)");
     
-    // Use a read-only provider if wallet not connected, otherwise use browser provider
-    const readProvider = provider || new ethers.JsonRpcProvider("https://mainnet.base.org");
+    // Explicitly use the Base Mainnet RPC
+    const readProvider = provider || new JsonRpcProvider(BASE_RPC_URL);
     
     setIsSearching(true);
     setSearchError(null);
     setSearchResult(null);
 
     try {
-      const name = searchTerm.toLowerCase();
-      const node = ethers.namehash(name);
+      const node = ethers.namehash(query);
       
+      // Use Registry Contract
       const registry = new Contract(REGISTRY_ADDRESS, REGISTRY_ABI, readProvider);
       const owner = await registry.owner(node);
 
       if (owner === ethers.ZeroAddress) {
-        setSearchResult({ name, available: true });
+        setSearchResult({ name: query, available: true });
       } else {
         // Name is taken, fetch profile
-        const resolverAddr = await registry.resolver(node);
+        let resolverAddr = await registry.resolver(node);
+        
+        // Fallback: If registry doesn't return a resolver, try the standard Base Resolver address
+        if (resolverAddr === ethers.ZeroAddress) {
+            resolverAddr = RESOLVER_ADDRESS;
+        }
+
         let profile: ProfileData = { owner, resolver: resolverAddr };
 
-        if (resolverAddr !== ethers.ZeroAddress) {
-          const resolver = new Contract(resolverAddr, RESOLVER_ABI, readProvider);
-          
-          // Parallel fetch for speed
-          const [avatar, twitter, url, addr] = await Promise.all([
-            resolver.text(node, "avatar").catch(() => ""),
-            resolver.text(node, "com.twitter").catch(() => ""),
-            resolver.text(node, "url").catch(() => ""),
-            resolver.addr(node).catch(() => "")
-          ]);
+        try {
+            const resolver = new Contract(resolverAddr, RESOLVER_ABI, readProvider);
+            
+            // Parallel fetch for speed
+            const [avatar, twitter, url, addr] = await Promise.all([
+                resolver.text(node, "avatar").catch(() => ""),
+                resolver.text(node, "com.twitter").catch(() => ""),
+                resolver.text(node, "url").catch(() => ""),
+                resolver.addr(node).catch(() => "")
+            ]);
 
-          profile = { ...profile, avatar, twitter, url, address: addr };
+            profile = { ...profile, avatar, twitter, url, address: addr };
+        } catch (resolverErr) {
+            console.warn("Could not query resolver details, showing basic info.", resolverErr);
         }
-        setSearchResult({ name, available: false, data: profile });
+        
+        setSearchResult({ name: query, available: false, data: profile });
       }
     } catch (err) {
       console.error(err);
-      setSearchError("Failed to resolve name. Ensure you are on Base Mainnet.");
+      setSearchError("Failed to resolve name. Check your connection or the name format.");
     } finally {
       setIsSearching(false);
     }
@@ -185,8 +350,14 @@ const App = () => {
     setIsMinting(true);
 
     try {
-      const cleanParent = parentName.toLowerCase();
-      const cleanLabel = subLabel.toLowerCase();
+      const cleanParent = parentName.toLowerCase().trim();
+      const cleanLabel = subLabel.toLowerCase().trim();
+      const cleanTarget = targetAddress.trim();
+      
+      if (!ethers.isAddress(cleanTarget)) {
+        throw new Error("Invalid target address provided.");
+      }
+
       const fullSubname = `${cleanLabel}.${cleanParent}`;
 
       // 1. Check ownership of parent
@@ -195,14 +366,13 @@ const App = () => {
       const owner = await registry.owner(parentNode);
 
       if (owner.toLowerCase() !== address?.toLowerCase()) {
-        throw new Error(`You do not own ${cleanParent}`);
+        throw new Error(`You do not own ${cleanParent}. Ensure the parent name in Step 1 is correct and owned by you.`);
       }
 
       // 2. Prepare Transaction
-      // labelhash is keccak256 of the label
       const labelHash = ethers.id(cleanLabel);
       
-      const tx = await registry.setSubnodeOwner(parentNode, labelHash, targetAddress);
+      const tx = await registry.setSubnodeOwner(parentNode, labelHash, ethers.getAddress(cleanTarget));
       setMintStatus({ type: 'success', msg: `Minting ${fullSubname}... Tx: ${tx.hash}` });
       
       await tx.wait();
@@ -247,7 +417,7 @@ const App = () => {
         </div>
       </nav>
 
-      <main className="max-w-5xl mx-auto px-6 py-12 space-y-16">
+      <main className="max-w-5xl mx-auto px-6 py-12 space-y-4">
 
         {/* --- SECTION 1: SEARCH --- */}
         <section>
@@ -277,7 +447,6 @@ const App = () => {
                 {isSearching ? <Loader2 className="animate-spin" /> : <Search size={24} />}
               </button>
             </form>
-            {/* Decoration */}
             <div className="absolute -inset-1 bg-gradient-to-r from-blue-100 to-purple-100 rounded-2xl blur opacity-50 -z-10"></div>
           </div>
 
@@ -305,14 +474,11 @@ const App = () => {
                 </Card>
               ) : (
                 <div className="bg-white rounded-[2rem] shadow-xl shadow-blue-900/5 overflow-hidden border border-gray-100">
-                  {/* Header Background */}
                   <div className="h-32 bg-gradient-to-r from-base-blue to-blue-600 relative">
-                     {/* Pattern */}
                      <div className="absolute inset-0 opacity-10" style={{backgroundImage: 'radial-gradient(circle, #fff 1px, transparent 1px)', backgroundSize: '20px 20px'}}></div>
                   </div>
                   
                   <div className="px-8 pb-8">
-                    {/* Avatar / Icon */}
                     <div className="relative -mt-12 mb-6">
                       <div className="w-24 h-24 rounded-2xl bg-white p-1.5 shadow-md inline-block">
                         {searchResult.data?.avatar ? (
@@ -351,7 +517,7 @@ const App = () => {
                          <span className="text-xs font-bold text-gray-400 uppercase tracking-wider block mb-1">Website</span>
                          <div className="flex items-center gap-2 text-gray-900 font-medium overflow-hidden">
                            <Globe size={18} className="text-base-blue flex-shrink-0"/> 
-                           <span className="truncate">{searchResult.data?.url || <span className="text-gray-400 italic font-normal">Not set</span>}</span>
+                           <a href={searchResult.data?.url?.startsWith('http') ? searchResult.data.url : `https://${searchResult.data?.url}`} target="_blank" className="truncate hover:underline">{searchResult.data?.url || <span className="text-gray-400 italic font-normal">Not set</span>}</a>
                          </div>
                        </div>
                        <div className="col-span-1 md:col-span-2 p-4 bg-gray-50 rounded-xl border border-gray-100">
@@ -366,6 +532,8 @@ const App = () => {
           )}
         </section>
 
+        {/* --- PIXEL ART AD SECTION --- */}
+        <AdBanner />
 
         {/* --- SECTION 2: SUBNAME MINTING --- */}
         <section className="max-w-4xl mx-auto pt-10 border-t border-gray-200">
