@@ -370,15 +370,9 @@ const App = () => {
   const handleMintSubname = async () => {
     console.log('Minting process started...');
     
-    if (!signer) {
-        console.error('No signer found. Wallet not connected.');
-        alert('Please connect your wallet to mint subnames.');
-        return;
-    }
-
-    if (chainId !== BASE_CHAIN_ID_DECIMAL) {
-        console.error('Wrong network.');
-        alert('Please switch to Base Mainnet.');
+    if (!window.ethereum) {
+        console.error('No ethereum provider found.');
+        alert('Please install a Web3 wallet to mint subnames.');
         return;
     }
 
@@ -386,6 +380,19 @@ const App = () => {
     setIsMinting(true);
 
     try {
+      // Logic Fix: Explicitly get a fresh signer right before the transaction
+      const tempProvider = new ethers.BrowserProvider(window.ethereum);
+      const freshSigner = await tempProvider.getSigner();
+      const currentNet = await tempProvider.getNetwork();
+
+      if (!freshSigner) {
+          throw new Error("Could not obtain wallet signer. Is your wallet connected?");
+      }
+
+      if (Number(currentNet.chainId) !== BASE_CHAIN_ID_DECIMAL) {
+          throw new Error("Wrong network. Please switch to Base Mainnet in your wallet.");
+      }
+
       const cleanParent = parentName.toLowerCase().trim();
       const cleanLabel = subLabel.toLowerCase().trim();
       const cleanTarget = targetAddress.trim();
@@ -399,21 +406,22 @@ const App = () => {
       const parentNode = toNodeHash(cleanParent);
       const labelHash = ethers.id(cleanLabel); // keccak256(toUtf8Bytes(label))
       
-      console.log('Minting parameters calculated:');
-      console.log('Parent Name:', cleanParent);
-      console.log('Parent Node Hash:', parentNode);
-      console.log('Subname Label:', cleanLabel);
-      console.log('Label Hash:', labelHash);
-      console.log('Target Owner:', cleanTarget);
+      console.log('Minting parameters calculated:', {
+        parentName: cleanParent,
+        parentNode,
+        subLabel: cleanLabel,
+        labelHash,
+        target: cleanTarget
+      });
 
-      const registry = new Contract(REGISTRY_ADDRESS, REGISTRY_ABI, signer);
+      const registry = new Contract(REGISTRY_ADDRESS, REGISTRY_ABI, freshSigner);
       
-      // Verification
+      // Ownership Verification on Registry
       const owner = await registry.owner(parentNode);
       console.log('Parent Owner on-chain:', owner);
       
       if (owner.toLowerCase() !== address?.toLowerCase()) {
-        throw new Error(`You do not own ${cleanParent}. Only the parent owner can issue subnames.`);
+        throw new Error(`Permission Denied: You do not own ${cleanParent}. Only the parent name owner can issue subnames.`);
       }
 
       console.log('Submitting transaction to L2 Registry...');
@@ -428,7 +436,7 @@ const App = () => {
       setSubLabel("");
     } catch (err: any) {
       console.error('Minting error:', err);
-      setMintStatus({ type: 'error', msg: err.reason || err.message || "Minting failed" });
+      setMintStatus({ type: 'error', msg: err.reason || err.message || "Minting failed. See console for details." });
     } finally {
       setIsMinting(false);
     }
@@ -582,10 +590,15 @@ const App = () => {
                 </div>
               </Card>
 
-              <Card className="relative md:col-span-2">
-                <h3 className="font-bold text-lg mb-6 flex items-center gap-2"><span className="w-6 h-6 rounded-full bg-black text-white flex items-center justify-center text-xs">2</span> Configuration</h3>
-                <div className="flex flex-col md:flex-row gap-4 items-end">
-                   <div className="flex-1 w-full">
+              <Card className="relative md:col-span-2 flex flex-col h-full">
+                <h3 className="font-bold text-lg mb-6 flex items-center gap-2">
+                  <span className="w-6 h-6 rounded-full bg-black text-white flex items-center justify-center text-xs">2</span> 
+                  Configuration
+                </h3>
+                
+                <div className="flex flex-col gap-6 flex-grow">
+                   {/* Subname Label Row */}
+                   <div className="w-full">
                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Subname Label</label>
                      <div className="flex items-center">
                        <input 
@@ -595,14 +608,22 @@ const App = () => {
                          placeholder="label" 
                          className="flex-1 bg-gray-50 border border-gray-200 rounded-l-xl px-4 py-3 text-sm font-medium outline-none focus:border-base-blue" 
                        />
-                       <div className="bg-gray-100 border border-l-0 border-gray-200 px-3 py-3 rounded-r-xl text-gray-500 text-sm font-medium">.{parentName || '...'}</div>
+                       <div className="bg-gray-100 border border-l-0 border-gray-200 px-4 py-3 rounded-r-xl text-gray-500 text-sm font-semibold">
+                         .{parentName || '...'}
+                       </div>
                      </div>
                    </div>
                    
-                   <div className="flex-[2] w-full">
+                   {/* Target Address Row - Now Full Width */}
+                   <div className="w-full">
                      <div className="flex items-center justify-between mb-2">
                         <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">Target Owner Address</label>
-                        <button onClick={useMyAddress} className="text-[10px] text-base-blue font-bold hover:underline">Use my address</button>
+                        <button 
+                          onClick={useMyAddress} 
+                          className="text-[10px] text-base-blue font-black uppercase tracking-widest hover:text-blue-700 transition-colors"
+                        >
+                          Use my address
+                        </button>
                      </div>
                      <input 
                         type="text" 
@@ -613,15 +634,19 @@ const App = () => {
                       />
                    </div>
 
-                   <button 
-                     onClick={handleMintSubname} 
-                     disabled={isMinting || !subLabel || !parentName || !targetAddress} 
-                     className="h-[46px] px-8 bg-base-blue text-white rounded-xl font-bold hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-400 transition-all flex items-center gap-2 shadow-lg shadow-blue-200 active:scale-95"
-                   >
-                     {isMinting ? <Loader2 className="animate-spin" size={18}/> : <Sparkles size={18}/>}
-                     Mint
-                   </button>
+                   {/* Action Button Area - Bottom Right */}
+                   <div className="flex items-center justify-end mt-2 pt-4 border-t border-gray-50">
+                     <button 
+                       onClick={handleMintSubname} 
+                       disabled={isMinting || !subLabel || !parentName || !targetAddress} 
+                       className="h-12 px-10 bg-base-blue text-white rounded-2xl font-black uppercase tracking-wider text-xs hover:bg-blue-700 disabled:bg-gray-100 disabled:text-gray-300 transition-all flex items-center gap-3 shadow-xl shadow-blue-500/20 active:scale-95"
+                     >
+                       {isMinting ? <Loader2 className="animate-spin" size={16}/> : <Sparkles size={16}/>}
+                       {isMinting ? "Minting..." : "Mint Subname"}
+                     </button>
+                   </div>
                 </div>
+
                 {mintStatus && (
                   <div className={`mt-6 p-4 rounded-xl flex items-start gap-3 text-sm animate-in fade-in slide-in-from-top-2 ${mintStatus.type === 'success' ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'}`}>
                     {mintStatus.type === 'success' ? <CheckCircle2 size={18} className="mt-0.5 flex-shrink-0"/> : <AlertCircle size={18} className="mt-0.5 flex-shrink-0"/>}
