@@ -26,13 +26,24 @@ declare global {
 // --- Configuration ---
 const BASE_CHAIN_ID_HEX = "0x2105"; // 8453
 const BASE_CHAIN_ID_DECIMAL = 8453;
-const BASE_RPC_URL = "https://mainnet.base.org";
+const BASE_RPC_URL = "https://base.llamarpc.com";
 const BASE_EXPLORER = "https://basescan.org";
 
-// Official Base ENS Contracts - Wrapped in getAddress with lowercase input to avoid checksum errors
-// By providing lowercase, ethers will calculate and return the correct checksummed address format.
-const REGISTRY_ADDRESS = ethers.getAddress("0x03c4738ee95ad7b091c01037cf66fd6217a213b2");
-const RESOLVER_ADDRESS = ethers.getAddress("0xc6d566a56a1aff6508b41f6c90ff131615583bcd"); 
+/**
+ * Official Base Mainnet Addresses
+ */
+const REGISTRY_ADDRESS = ethers.getAddress("0x00000000000c2e074ec69a0dfb2997ba6c7d2e1e");
+const RESOLVER_ADDRESS = ethers.getAddress("0xc6d566a56a1aff6508b41f6c90ff131615583bcd");
+const REGISTRAR_ADDRESS = ethers.getAddress("0x03c4738ee98ae44591e1a4a4f3cab6641d95dd9a");
+
+/**
+ * Helper to convert a .base.eth name into its corresponding node hash.
+ * Normalizes the input by lowercasing and trimming.
+ */
+const toNodeHash = (name: string): string => {
+  if (!name) return ethers.ZeroHash;
+  return ethers.namehash(name.toLowerCase().trim());
+};
 
 // --- ABIs ---
 const REGISTRY_ABI = [
@@ -91,7 +102,7 @@ const PixelCanvas = () => {
     // Palette
     const C_BG = '#000000';
     const C_BLUE = '#0052FF';
-    const C_ORANGE = '#F97316'; // Tailwind Orange-500
+    const C_ORANGE = '#F97316'; 
     const C_DARK_BLUE = '#172554';
 
     // Clear
@@ -100,7 +111,7 @@ const PixelCanvas = () => {
 
     // Procedural Terrain Generation
     const terrain = new Float32Array(cols);
-    let yOff = rows * 0.7; // Start lower down
+    let yOff = rows * 0.7;
     
     for(let i = 0; i < cols; i++) {
         const jaggedness = (Math.random() - 0.5) * 8; 
@@ -160,7 +171,7 @@ const PixelCanvas = () => {
         <div className="absolute top-4 right-4 flex flex-col gap-2 items-end">
              <div className="flex items-center gap-1 text-white text-[10px] font-mono opacity-80 bg-black/50 px-2 py-1 rounded">
                 <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                1.46 Mwei
+                Live on Base
              </div>
         </div>
         <div className="absolute bottom-4 right-4 text-white text-[10px] font-mono opacity-50 rotate-90 origin-bottom-right translate-x-full whitespace-nowrap">
@@ -185,7 +196,7 @@ const AdBanner = () => (
                 </h2>
                 <div className="space-y-6">
                     <p className="text-gray-500 font-medium max-w-xs mx-auto sm:mx-0 leading-relaxed">
-                        In collaboration with Base and Coinbase Ventures, Y Combinator just announced Request for Startups: Fintech 3.0.
+                        In collaboration with Base and Coinbase Ventures, Y Combinator announced Request for Startups: Fintech 3.0.
                     </p>
                     <a href="https://base.org" target="_blank" className="inline-flex items-center gap-2 bg-base-blue text-white px-8 py-4 rounded-full font-bold hover:bg-blue-700 transition-all hover:pr-10">
                         Start Building <ArrowRight size={18} />
@@ -244,13 +255,11 @@ const App = () => {
   // --- Reverse Resolution ---
   useEffect(() => {
     const performReverseResolution = async () => {
-      // Prioritize the connected provider, otherwise use the fixed Base RPC
       const activeProvider = provider || new JsonRpcProvider(BASE_RPC_URL);
       if (address) {
         try {
-          // ENS standard lookupAddress
           const name = await activeProvider.lookupAddress(address);
-          if (name && name.toLowerCase().endsWith('.base.eth')) {
+          if (name && (name.toLowerCase().endsWith('.base.eth') || name.toLowerCase().endsWith('.eth'))) {
             setParentName(name);
           }
         } catch (err) {
@@ -291,7 +300,6 @@ const App = () => {
     const query = searchTerm.trim().toLowerCase();
     if (!query.includes('.')) return setSearchError("Please enter a valid name (e.g. jesse.base.eth)");
     
-    // Explicitly use the Base Mainnet RPC
     const readProvider = provider || new JsonRpcProvider(BASE_RPC_URL);
     
     setIsSearching(true);
@@ -299,19 +307,27 @@ const App = () => {
     setSearchResult(null);
 
     try {
-      const node = ethers.namehash(query);
-      
-      // Use Registry Contract
+      // Use helper function for nodehash conversion
+      const node = toNodeHash(query);
       const registry = new Contract(REGISTRY_ADDRESS, REGISTRY_ABI, readProvider);
-      const owner = await registry.owner(node);
+      
+      let owner = ethers.ZeroAddress;
+      try {
+        owner = await registry.owner(node);
+      } catch (ownerErr) {
+        console.warn("Owner call failed, assuming available", ownerErr);
+      }
 
       if (owner === ethers.ZeroAddress) {
         setSearchResult({ name: query, available: true });
       } else {
-        // Name is taken, fetch profile
-        let resolverAddr = await registry.resolver(node);
+        let resolverAddr = ethers.ZeroAddress;
+        try {
+            resolverAddr = await registry.resolver(node);
+        } catch (resErr) {
+            console.debug("Resolver lookup failed");
+        }
         
-        // Fallback: If registry doesn't return a resolver, try the standard Base Resolver address
         if (resolverAddr === ethers.ZeroAddress) {
             resolverAddr = RESOLVER_ADDRESS;
         }
@@ -320,25 +336,22 @@ const App = () => {
 
         try {
             const resolver = new Contract(resolverAddr, RESOLVER_ABI, readProvider);
-            
-            // Parallel fetch for speed
             const [avatar, twitter, url, addr] = await Promise.all([
                 resolver.text(node, "avatar").catch(() => ""),
                 resolver.text(node, "com.twitter").catch(() => ""),
                 resolver.text(node, "url").catch(() => ""),
                 resolver.addr(node).catch(() => "")
             ]);
-
             profile = { ...profile, avatar, twitter, url, address: addr };
         } catch (resolverErr) {
-            console.warn("Could not query resolver details, showing basic info.", resolverErr);
+            console.warn("Could not query resolver details", resolverErr);
         }
         
         setSearchResult({ name: query, available: false, data: profile });
       }
     } catch (err) {
       console.error(err);
-      setSearchError("Failed to resolve name. Check your connection or the name format.");
+      setSearchError("Failed to resolve name. The RPC might be busy, please try again.");
     } finally {
       setIsSearching(false);
     }
@@ -359,21 +372,25 @@ const App = () => {
       }
 
       const fullSubname = `${cleanLabel}.${cleanParent}`;
-
-      // 1. Check ownership of parent
-      const parentNode = ethers.namehash(cleanParent);
+      
+      // Use helper function for parent nodehash conversion
+      const parentNode = toNodeHash(cleanParent);
       const registry = new Contract(REGISTRY_ADDRESS, REGISTRY_ABI, signer);
-      const owner = await registry.owner(parentNode);
-
-      if (owner.toLowerCase() !== address?.toLowerCase()) {
-        throw new Error(`You do not own ${cleanParent}. Ensure the parent name in Step 1 is correct and owned by you.`);
+      
+      let owner = ethers.ZeroAddress;
+      try {
+        owner = await registry.owner(parentNode);
+      } catch (err) {
+        throw new Error("Could not verify parent name ownership.");
       }
 
-      // 2. Prepare Transaction
+      if (owner.toLowerCase() !== address?.toLowerCase()) {
+        throw new Error(`You do not own ${cleanParent}. Subnames can only be minted by the parent owner.`);
+      }
+
       const labelHash = ethers.id(cleanLabel);
-      
       const tx = await registry.setSubnodeOwner(parentNode, labelHash, ethers.getAddress(cleanTarget));
-      setMintStatus({ type: 'success', msg: `Minting ${fullSubname}... Tx: ${tx.hash}` });
+      setMintStatus({ type: 'success', msg: `Tx Submitted: ${tx.hash}` });
       
       await tx.wait();
       setMintStatus({ type: 'success', msg: `Successfully minted ${fullSubname}!` });
@@ -381,7 +398,7 @@ const App = () => {
       
     } catch (err: any) {
       console.error(err);
-      setMintStatus({ type: 'error', msg: err.message || "Minting failed" });
+      setMintStatus({ type: 'error', msg: err.reason || err.message || "Minting failed" });
     } finally {
       setIsMinting(false);
     }
@@ -468,7 +485,7 @@ const App = () => {
                   </div>
                   <div className="text-right">
                     <span className="text-xs text-gray-400 font-medium block max-w-[200px]">
-                      Note: Top-level .base.eth names are managed by Coinbase.
+                      Basenames are integrated with the ENS Registry on Base.
                     </span>
                   </div>
                 </Card>
