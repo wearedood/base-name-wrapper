@@ -16,7 +16,8 @@ import {
   ExternalLink,
   Sparkles,
   ShieldAlert,
-  Settings
+  Settings,
+  ChevronRight
 } from "lucide-react";
 
 // Add declaration for window.ethereum
@@ -272,15 +273,12 @@ const App = () => {
             setUserProfile({ name, avatar });
           } else {
             setUserProfile(null);
-            setParentName("");
           }
         } catch (err) {
           setUserProfile(null);
-          setParentName("");
         }
       } else {
         setUserProfile(null);
-        setParentName("");
       }
     };
     fetchUserProfile();
@@ -323,15 +321,12 @@ const App = () => {
     try {
       const node = toNodeHash(query);
       
-      // Direct Contract Call to the L2 Resolver to check availability
       const resolver = new Contract(RESOLVER_ADDRESS, RESOLVER_ABI, activeProvider);
       const resolvedAddress = await resolver.addr(node);
 
       if (!resolvedAddress || resolvedAddress === ethers.ZeroAddress) {
-        // Name is Available according to Resolver addr record
         setSearchResult({ name: query, available: true });
       } else {
-        // Name is Taken
         const registry = new Contract(REGISTRY_ADDRESS, REGISTRY_ABI, activeProvider);
         
         let owner = ethers.ZeroAddress;
@@ -366,14 +361,27 @@ const App = () => {
       }
     } catch (err) {
       console.error(err);
-      setSearchError("Resolution failed. The Base network may be congested. Please try again.");
+      setSearchError("Resolution failed. Please check your network and try again.");
     } finally {
       setIsSearching(false);
     }
   };
 
   const handleMintSubname = async () => {
-    if (!signer || !chainId) return;
+    console.log('Minting process started...');
+    
+    if (!signer) {
+        console.error('No signer found. Wallet not connected.');
+        alert('Please connect your wallet to mint subnames.');
+        return;
+    }
+
+    if (chainId !== BASE_CHAIN_ID_DECIMAL) {
+        console.error('Wrong network.');
+        alert('Please switch to Base Mainnet.');
+        return;
+    }
+
     setMintStatus(null);
     setIsMinting(true);
 
@@ -382,22 +390,44 @@ const App = () => {
       const cleanLabel = subLabel.toLowerCase().trim();
       const cleanTarget = targetAddress.trim();
       
+      if (!cleanParent || !cleanLabel || !cleanTarget) {
+          throw new Error("Please fill in all fields.");
+      }
+
       if (!ethers.isAddress(cleanTarget)) throw new Error("Invalid target address.");
 
       const parentNode = toNodeHash(cleanParent);
+      const labelHash = ethers.id(cleanLabel); // keccak256(toUtf8Bytes(label))
+      
+      console.log('Minting parameters calculated:');
+      console.log('Parent Name:', cleanParent);
+      console.log('Parent Node Hash:', parentNode);
+      console.log('Subname Label:', cleanLabel);
+      console.log('Label Hash:', labelHash);
+      console.log('Target Owner:', cleanTarget);
+
       const registry = new Contract(REGISTRY_ADDRESS, REGISTRY_ABI, signer);
       
+      // Verification
       const owner = await registry.owner(parentNode);
+      console.log('Parent Owner on-chain:', owner);
+      
       if (owner.toLowerCase() !== address?.toLowerCase()) {
-        throw new Error(`You do not own ${cleanParent}. Subnames can only be minted by the parent owner.`);
+        throw new Error(`You do not own ${cleanParent}. Only the parent owner can issue subnames.`);
       }
 
-      const tx = await registry.setSubnodeOwner(parentNode, ethers.id(cleanLabel), ethers.getAddress(cleanTarget));
-      setMintStatus({ type: 'success', msg: `Transaction Submitted: ${tx.hash.slice(0, 20)}...` });
+      console.log('Submitting transaction to L2 Registry...');
+      const tx = await registry.setSubnodeOwner(parentNode, labelHash, ethers.getAddress(cleanTarget));
+      
+      setMintStatus({ type: 'success', msg: `Transaction Submitted: ${tx.hash.slice(0, 15)}...` });
+      console.log('Transaction Hash:', tx.hash);
+
       await tx.wait();
+      console.log('Minting Successful!');
       setMintStatus({ type: 'success', msg: `Successfully minted ${cleanLabel}.${cleanParent}!` });
       setSubLabel("");
     } catch (err: any) {
+      console.error('Minting error:', err);
       setMintStatus({ type: 'error', msg: err.reason || err.message || "Minting failed" });
     } finally {
       setIsMinting(false);
@@ -407,8 +437,15 @@ const App = () => {
   const isOnBase = chainId === BASE_CHAIN_ID_DECIMAL;
 
   const scrollToSubname = () => {
-    subnameRef.current?.scrollIntoView({ behavior: 'smooth' });
-    if (searchResult?.name) setParentName(searchResult.name);
+    if (searchResult?.name) {
+        console.log(`Managing name: ${searchResult.name}`);
+        setParentName(searchResult.name);
+    }
+    subnameRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const useMyAddress = () => {
+    if (address) setTargetAddress(address);
   };
 
   return (
@@ -492,8 +529,8 @@ const App = () => {
                         <span className="px-3 py-1 bg-gray-100 rounded-md text-xs font-mono text-gray-500 flex items-center gap-1 w-fit"><Wallet size={12}/> {searchResult.data?.address?.slice(0,6)}...{searchResult.data?.address?.slice(-4)}</span>
                       </div>
                       {searchResult.data?.isMine && (
-                        <button onClick={scrollToSubname} className="bg-base-blue text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-blue-700 transition-colors flex items-center gap-2">
-                          <Settings size={14}/> Manage
+                        <button onClick={scrollToSubname} className="bg-base-blue text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-blue-700 transition-colors flex items-center gap-2 group shadow-lg shadow-blue-200">
+                          <Settings size={14} className="group-hover:rotate-90 transition-transform duration-300"/> Manage Subnames
                         </button>
                       )}
                     </div>
@@ -516,40 +553,81 @@ const App = () => {
 
         <AdBanner />
 
-        <section ref={subnameRef} className="max-w-4xl mx-auto pt-10 border-t border-gray-200">
+        <section ref={subnameRef} className="max-w-4xl mx-auto pt-10 border-t border-gray-200 scroll-mt-24">
            <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
              <div><h2 className="text-3xl font-[800] tracking-tight">Subname Manager</h2><p className="text-gray-500">Issue subnames for a name you own on Base L2.</p></div>
-             {!address ? <button onClick={connectWallet} className="bg-base-blue text-white px-6 py-3 rounded-full font-bold shadow-lg shadow-blue-200">Connect to Mint</button> : !isOnBase ? <button onClick={switchToBase} className="bg-red-500 text-white px-6 py-3 rounded-full font-bold">Switch to Base</button> : null}
+             {!address ? (
+               <button onClick={connectWallet} className="bg-base-blue text-white px-6 py-3 rounded-full font-bold shadow-lg shadow-blue-200">Connect to Mint</button>
+             ) : !isOnBase ? (
+               <button onClick={switchToBase} className="bg-red-500 text-white px-6 py-3 rounded-full font-bold">Switch to Base</button>
+             ) : null}
            </div>
+           
            <div className={`grid grid-cols-1 md:grid-cols-3 gap-8 ${!address || !isOnBase ? 'opacity-50 pointer-events-none grayscale' : ''}`}>
-              <Card className="relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-4 opacity-10"><Box size={64}/></div>
+              <Card className="relative overflow-hidden group">
+                <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:rotate-12 transition-transform duration-500"><Box size={64}/></div>
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="font-bold text-lg flex items-center gap-2"><span className="w-6 h-6 rounded-full bg-black text-white flex items-center justify-center text-xs">1</span> Parent Name</h3>
-                  {userProfile?.name && parentName === userProfile.name && <span className="text-[9px] font-black uppercase text-base-blue bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">Synced</span>}
                 </div>
-                <input type="text" value={parentName} onChange={(e) => setParentName(e.target.value)} placeholder="e.g. myname.base.eth" className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:border-base-blue transition-colors mb-2" />
-                <p className="text-xs text-gray-400">Owner check on L2 Registry.</p>
+                <input 
+                  type="text" 
+                  value={parentName} 
+                  onChange={(e) => setParentName(e.target.value)} 
+                  placeholder="e.g. myname.base.eth" 
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:border-base-blue transition-colors mb-2" 
+                />
+                <div className="flex items-center justify-between">
+                   <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">L2 Registry Domain</p>
+                   {userProfile?.name === parentName && <span className="text-[9px] font-black uppercase text-base-blue flex items-center gap-1"><CheckCircle2 size={10}/> Own Verified</span>}
+                </div>
               </Card>
+
               <Card className="relative md:col-span-2">
                 <h3 className="font-bold text-lg mb-6 flex items-center gap-2"><span className="w-6 h-6 rounded-full bg-black text-white flex items-center justify-center text-xs">2</span> Configuration</h3>
                 <div className="flex flex-col md:flex-row gap-4 items-end">
                    <div className="flex-1 w-full">
                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Subname Label</label>
                      <div className="flex items-center">
-                       <input type="text" value={subLabel} onChange={(e) => setSubLabel(e.target.value)} placeholder="label" className="flex-1 bg-gray-50 border border-gray-200 rounded-l-xl px-4 py-3 text-sm font-medium outline-none focus:border-base-blue" />
-                       <div className="bg-gray-100 border border-l-0 border-gray-200 px-3 py-3 rounded-r-xl text-gray-500 text-sm">.{parentName || '...'}</div>
+                       <input 
+                         type="text" 
+                         value={subLabel} 
+                         onChange={(e) => setSubLabel(e.target.value)} 
+                         placeholder="label" 
+                         className="flex-1 bg-gray-50 border border-gray-200 rounded-l-xl px-4 py-3 text-sm font-medium outline-none focus:border-base-blue" 
+                       />
+                       <div className="bg-gray-100 border border-l-0 border-gray-200 px-3 py-3 rounded-r-xl text-gray-500 text-sm font-medium">.{parentName || '...'}</div>
                      </div>
                    </div>
+                   
                    <div className="flex-[2] w-full">
-                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Target Address</label>
-                     <input type="text" value={targetAddress} onChange={(e) => setTargetAddress(e.target.value)} placeholder="0x..." className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-mono outline-none focus:border-base-blue" />
+                     <div className="flex items-center justify-between mb-2">
+                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">Target Owner Address</label>
+                        <button onClick={useMyAddress} className="text-[10px] text-base-blue font-bold hover:underline">Use my address</button>
+                     </div>
+                     <input 
+                        type="text" 
+                        value={targetAddress} 
+                        onChange={(e) => setTargetAddress(e.target.value)} 
+                        placeholder="0x..." 
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-mono outline-none focus:border-base-blue" 
+                      />
                    </div>
-                   <button onClick={handleMintSubname} disabled={isMinting || !subLabel || !parentName || !targetAddress} className="h-[46px] px-6 bg-black text-white rounded-xl font-bold hover:bg-gray-800 disabled:bg-gray-200 transition-colors flex items-center gap-2">
-                     {isMinting ? <Loader2 className="animate-spin" size={18}/> : <ArrowRight size={18}/>}Mint
+
+                   <button 
+                     onClick={handleMintSubname} 
+                     disabled={isMinting || !subLabel || !parentName || !targetAddress} 
+                     className="h-[46px] px-8 bg-base-blue text-white rounded-xl font-bold hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-400 transition-all flex items-center gap-2 shadow-lg shadow-blue-200 active:scale-95"
+                   >
+                     {isMinting ? <Loader2 className="animate-spin" size={18}/> : <Sparkles size={18}/>}
+                     Mint
                    </button>
                 </div>
-                {mintStatus && <div className={`mt-6 p-4 rounded-xl flex items-start gap-3 text-sm ${mintStatus.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}><div className="break-all">{mintStatus.msg}</div></div>}
+                {mintStatus && (
+                  <div className={`mt-6 p-4 rounded-xl flex items-start gap-3 text-sm animate-in fade-in slide-in-from-top-2 ${mintStatus.type === 'success' ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'}`}>
+                    {mintStatus.type === 'success' ? <CheckCircle2 size={18} className="mt-0.5 flex-shrink-0"/> : <AlertCircle size={18} className="mt-0.5 flex-shrink-0"/>}
+                    <div className="break-all font-medium leading-relaxed">{mintStatus.msg}</div>
+                  </div>
+                )}
               </Card>
            </div>
         </section>
