@@ -29,14 +29,14 @@ declare global {
 // --- Configuration ---
 const BASE_CHAIN_ID_HEX = "0x2105"; // 8453
 const BASE_CHAIN_ID_DECIMAL = 8453;
-const BASE_RPC_URL = "https://mainnet.base.org"; // Using official Base Mainnet RPC
+const BASE_RPC_URL = "https://mainnet.base.org"; 
 const BASE_EXPLORER = "https://basescan.org";
 
 /**
- * Official Base Mainnet Addresses
+ * Official Base L2 Mainnet Addresses
  */
-const REGISTRY_ADDRESS = ethers.getAddress("0x00000000000c2e074ec69a0dfb2997ba6c7d2e1e");
-const RESOLVER_ADDRESS = ethers.getAddress("0xc6d566a56a1aff6508b41f6c90ff131615583bcd");
+const REGISTRY_ADDRESS = ethers.getAddress("0xb94704422c2a1e396835a571837aa5ae53285a95");
+const RESOLVER_ADDRESS = ethers.getAddress("0xC6d566A56A1aFf6508b41f6c90ff131615583BCD");
 
 /**
  * Helper to convert a .base.eth name into its corresponding node hash.
@@ -94,8 +94,6 @@ const Card = ({ children, className = "" }: { children?: React.ReactNode, classN
     {children}
   </div>
 );
-
-// --- PIXEL ART COMPONENTS ---
 
 const PixelCanvas = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -198,8 +196,6 @@ const AdBanner = () => (
     </div>
 );
 
-// --- MAIN APP ---
-
 const App = () => {
   const [provider, setProvider] = useState<BrowserProvider | null>(null);
   const [signer, setSigner] = useState<ethers.JsonRpcSigner | null>(null);
@@ -265,7 +261,7 @@ const App = () => {
             setParentName(name);
             const node = ethers.namehash(name);
             const registry = new Contract(REGISTRY_ADDRESS, REGISTRY_ABI, activeProvider);
-            const resolverAddr = await registry.resolver(node).catch(() => ethers.ZeroAddress);
+            const resolverAddr = await registry.resolver(node).catch(() => RESOLVER_ADDRESS);
             
             let avatar = "";
             if (resolverAddr !== ethers.ZeroAddress) {
@@ -325,29 +321,26 @@ const App = () => {
     setSearchResult(null);
 
     try {
-      // Logic Improvement: Use Standard Resolution Method
-      const resolvedAddress = await activeProvider.resolveName(query);
+      const node = toNodeHash(query);
+      
+      // Direct Contract Call to the L2 Resolver to check availability
+      const resolver = new Contract(RESOLVER_ADDRESS, RESOLVER_ABI, activeProvider);
+      const resolvedAddress = await resolver.addr(node);
 
-      if (!resolvedAddress) {
-        // Name is Available
+      if (!resolvedAddress || resolvedAddress === ethers.ZeroAddress) {
+        // Name is Available according to Resolver addr record
         setSearchResult({ name: query, available: true });
       } else {
         // Name is Taken
-        const node = toNodeHash(query);
         const registry = new Contract(REGISTRY_ADDRESS, REGISTRY_ABI, activeProvider);
         
         let owner = ethers.ZeroAddress;
-        let resolverAddr = ethers.ZeroAddress;
         try {
           owner = await registry.owner(node);
-          resolverAddr = await registry.resolver(node);
         } catch (err) {
-          console.debug("Ownership lookup failed, using resolution defaults");
+          console.debug("Ownership lookup failed on L2 Registry");
         }
 
-        if (resolverAddr === ethers.ZeroAddress) resolverAddr = RESOLVER_ADDRESS;
-
-        const resolver = new Contract(resolverAddr, RESOLVER_ABI, activeProvider);
         const [avatarRecord, twitter, url] = await Promise.all([
           resolver.text(node, "avatar").catch(() => ""),
           resolver.text(node, "com.twitter").catch(() => ""),
@@ -362,7 +355,7 @@ const App = () => {
           available: false, 
           data: { 
             owner, 
-            resolver: resolverAddr, 
+            resolver: RESOLVER_ADDRESS, 
             avatar, 
             twitter, 
             url, 
@@ -373,7 +366,7 @@ const App = () => {
       }
     } catch (err) {
       console.error(err);
-      setSearchError("Could not verify name. Please check your connection and try again.");
+      setSearchError("Resolution failed. The Base network may be congested. Please try again.");
     } finally {
       setIsSearching(false);
     }
@@ -396,7 +389,7 @@ const App = () => {
       
       const owner = await registry.owner(parentNode);
       if (owner.toLowerCase() !== address?.toLowerCase()) {
-        throw new Error(`You do not own ${cleanParent}. Subnames can only be minted by the owner.`);
+        throw new Error(`You do not own ${cleanParent}. Subnames can only be minted by the parent owner.`);
       }
 
       const tx = await registry.setSubnodeOwner(parentNode, ethers.id(cleanLabel), ethers.getAddress(cleanTarget));
@@ -454,7 +447,7 @@ const App = () => {
         <section>
           <div className="text-center mb-10">
             <h1 className="text-5xl font-[900] tracking-tighter mb-4">Find your <span className="text-base-blue">Base</span> identity.</h1>
-            <p className="text-gray-500 text-lg">Check availability for .base.eth names and manage your profile records.</p>
+            <p className="text-gray-500 text-lg">Direct resolution for .base.eth names on the Base L2 Network.</p>
           </div>
           <div className="max-w-2xl mx-auto relative mb-12">
             <form onSubmit={handleSearch} className="relative z-10">
@@ -525,7 +518,7 @@ const App = () => {
 
         <section ref={subnameRef} className="max-w-4xl mx-auto pt-10 border-t border-gray-200">
            <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
-             <div><h2 className="text-3xl font-[800] tracking-tight">Subname Manager</h2><p className="text-gray-500">Issue subnames for a name you own.</p></div>
+             <div><h2 className="text-3xl font-[800] tracking-tight">Subname Manager</h2><p className="text-gray-500">Issue subnames for a name you own on Base L2.</p></div>
              {!address ? <button onClick={connectWallet} className="bg-base-blue text-white px-6 py-3 rounded-full font-bold shadow-lg shadow-blue-200">Connect to Mint</button> : !isOnBase ? <button onClick={switchToBase} className="bg-red-500 text-white px-6 py-3 rounded-full font-bold">Switch to Base</button> : null}
            </div>
            <div className={`grid grid-cols-1 md:grid-cols-3 gap-8 ${!address || !isOnBase ? 'opacity-50 pointer-events-none grayscale' : ''}`}>
@@ -536,10 +529,10 @@ const App = () => {
                   {userProfile?.name && parentName === userProfile.name && <span className="text-[9px] font-black uppercase text-base-blue bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">Synced</span>}
                 </div>
                 <input type="text" value={parentName} onChange={(e) => setParentName(e.target.value)} placeholder="e.g. myname.base.eth" className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:border-base-blue transition-colors mb-2" />
-                <p className="text-xs text-gray-400">Owner only access.</p>
+                <p className="text-xs text-gray-400">Owner check on L2 Registry.</p>
               </Card>
               <Card className="relative md:col-span-2">
-                <h3 className="font-bold text-lg mb-6 flex items-center gap-2"><span className="w-6 h-6 rounded-full bg-black text-white flex items-center justify-center text-xs">2</span> Details</h3>
+                <h3 className="font-bold text-lg mb-6 flex items-center gap-2"><span className="w-6 h-6 rounded-full bg-black text-white flex items-center justify-center text-xs">2</span> Configuration</h3>
                 <div className="flex flex-col md:flex-row gap-4 items-end">
                    <div className="flex-1 w-full">
                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Subname Label</label>
