@@ -13,7 +13,9 @@ import {
   Wallet,
   Loader2,
   Box,
-  ExternalLink
+  ExternalLink,
+  Sparkles,
+  ShieldAlert
 } from "lucide-react";
 
 // Add declaration for window.ethereum
@@ -43,6 +45,19 @@ const REGISTRAR_ADDRESS = ethers.getAddress("0x03c4738ee98ae44591e1a4a4f3cab6641
 const toNodeHash = (name: string): string => {
   if (!name) return ethers.ZeroHash;
   return ethers.namehash(name.toLowerCase().trim());
+};
+
+/**
+ * Helper to resolve an avatar record to a displayable URL.
+ */
+const resolveAvatarUrl = (name: string, record: string): string => {
+  if (!record) return "";
+  if (record.startsWith("http")) return record;
+  if (record.startsWith("ipfs://")) {
+    return record.replace("ipfs://", "https://ipfs.io/ipfs/");
+  }
+  // Fallback to ENS Metadata Service for NFT-based avatars (eip155)
+  return `https://metadata.ens.domains/mainnet/avatar/${name}`;
 };
 
 // --- ABIs ---
@@ -219,6 +234,7 @@ const App = () => {
   const [signer, setSigner] = useState<ethers.JsonRpcSigner | null>(null);
   const [address, setAddress] = useState<string | null>(null);
   const [chainId, setChainId] = useState<number | null>(null);
+  const [userProfile, setUserProfile] = useState<{name?: string, avatar?: string} | null>(null);
 
   // Search State
   const [searchTerm, setSearchTerm] = useState("");
@@ -239,7 +255,7 @@ const App = () => {
     if (!window.ethereum) return alert("Please install Coinbase Wallet");
     try {
       const p = new BrowserProvider(window.ethereum);
-      const s = await p.getSigner();
+      const s = await p.getNetwork().then(() => p.getSigner());
       const net = await p.getNetwork();
       const accounts = await p.send("eth_requestAccounts", []);
       
@@ -252,22 +268,69 @@ const App = () => {
     }
   };
 
-  // --- Reverse Resolution ---
+  // Listen for chain/account changes
   useEffect(() => {
-    const performReverseResolution = async () => {
+    if (window.ethereum) {
+      const handleChainChanged = (hexChainId: string) => {
+        setChainId(parseInt(hexChainId, 16));
+      };
+      const handleAccountsChanged = (accounts: string[]) => {
+        setAddress(accounts[0] || null);
+      };
+      
+      window.ethereum.on('chainChanged', handleChainChanged);
+      window.ethereum.on('accountsChanged', handleAccountsChanged);
+      
+      // Initial check if already connected
+      window.ethereum.request({ method: 'eth_chainId' }).then((hex: string) => setChainId(parseInt(hex, 16)));
+      window.ethereum.request({ method: 'eth_accounts' }).then((accounts: string[]) => setAddress(accounts[0] || null));
+
+      return () => {
+        window.ethereum.removeListener('chainChanged', handleChainChanged);
+        window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
+      };
+    }
+  }, []);
+
+  // --- Profile Lookup & Parent Name Auto-population ---
+  useEffect(() => {
+    const fetchUserProfile = async () => {
+      // Use Base RPC specifically for reverse resolution
       const activeProvider = provider || new JsonRpcProvider(BASE_RPC_URL);
       if (address) {
         try {
           const name = await activeProvider.lookupAddress(address);
           if (name && (name.toLowerCase().endsWith('.base.eth') || name.toLowerCase().endsWith('.eth'))) {
+            // Auto-populate the minting input
             setParentName(name);
+            
+            // Resolve Avatar for user
+            const node = ethers.namehash(name);
+            const registry = new Contract(REGISTRY_ADDRESS, REGISTRY_ABI, activeProvider);
+            const resolverAddr = await registry.resolver(node).catch(() => ethers.ZeroAddress);
+            
+            let avatar = "";
+            if (resolverAddr !== ethers.ZeroAddress) {
+              const resolver = new Contract(resolverAddr, RESOLVER_ABI, activeProvider);
+              const avatarRecord = await resolver.text(node, "avatar").catch(() => "");
+              avatar = resolveAvatarUrl(name, avatarRecord);
+            }
+            setUserProfile({ name, avatar });
+          } else {
+            setUserProfile(null);
+            setParentName("");
           }
         } catch (err) {
-          console.debug("Reverse lookup failed:", err);
+          console.debug("User profile lookup failed:", err);
+          setUserProfile(null);
+          setParentName("");
         }
+      } else {
+        setUserProfile(null);
+        setParentName("");
       }
     };
-    performReverseResolution();
+    fetchUserProfile();
   }, [address, provider]);
 
   const switchToBase = async () => {
@@ -297,8 +360,14 @@ const App = () => {
 
   const handleSearch = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    const query = searchTerm.trim().toLowerCase();
-    if (!query.includes('.')) return setSearchError("Please enter a valid name (e.g. jesse.base.eth)");
+    let query = searchTerm.trim().toLowerCase();
+    
+    if (!query) return;
+
+    // Automatically append .base.eth if no domain is provided
+    if (!query.includes('.')) {
+      query += ".base.eth";
+    }
     
     const readProvider = provider || new JsonRpcProvider(BASE_RPC_URL);
     
@@ -336,12 +405,16 @@ const App = () => {
 
         try {
             const resolver = new Contract(resolverAddr, RESOLVER_ABI, readProvider);
-            const [avatar, twitter, url, addr] = await Promise.all([
+            const [avatarRecord, twitter, url, addr] = await Promise.all([
                 resolver.text(node, "avatar").catch(() => ""),
                 resolver.text(node, "com.twitter").catch(() => ""),
                 resolver.text(node, "url").catch(() => ""),
                 resolver.addr(node).catch(() => "")
             ]);
+
+            // Resolve Avatar properly using helper
+            const avatar = resolveAvatarUrl(query, avatarRecord);
+
             profile = { ...profile, avatar, twitter, url, address: addr };
         } catch (resolverErr) {
             console.warn("Could not query resolver details", resolverErr);
@@ -417,18 +490,48 @@ const App = () => {
             <span className="font-bold text-xl tracking-tight">Base Names</span>
           </div>
           
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 sm:gap-4">
             {address && (
-              <div className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wide ${isOnBase ? 'bg-blue-50 text-base-blue' : 'bg-red-50 text-red-600'}`}>
-                <div className={`w-2 h-2 rounded-full ${isOnBase ? 'bg-base-blue' : 'bg-red-600'}`}></div>
-                {isOnBase ? 'Base' : 'Wrong Net'}
-              </div>
+              isOnBase ? (
+                <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wide bg-blue-50 text-base-blue border border-blue-100">
+                  <div className="w-2 h-2 rounded-full bg-base-blue"></div>
+                  Base
+                </div>
+              ) : (
+                <button 
+                  onClick={switchToBase}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] sm:text-xs font-bold uppercase tracking-wide bg-red-50 text-red-600 border border-red-100 hover:bg-red-100 transition-colors animate-pulse whitespace-nowrap"
+                >
+                  <ShieldAlert size={14} />
+                  Switch to Base
+                </button>
+              )
             )}
+            
             <button 
               onClick={address ? undefined : connectWallet}
-              className="bg-black text-white px-5 py-2.5 rounded-full font-bold text-sm hover:bg-gray-800 transition-all active:scale-95"
+              className={`
+                flex items-center gap-2 sm:gap-3 rounded-full font-bold transition-all active:scale-95
+                ${address 
+                  ? "bg-gray-100 text-black pr-1 pl-4 py-1 border border-gray-200 hover:bg-gray-200" 
+                  : "bg-black text-white px-6 py-2.5 hover:bg-gray-800 shadow-sm"
+                }
+              `}
             >
-              {address ? `${address.slice(0,6)}...${address.slice(-4)}` : "Connect Wallet"}
+              <span className="text-xs sm:text-sm font-bold">
+                {address ? `${address.slice(0,6)}...${address.slice(-4)}` : "Connect Wallet"}
+              </span>
+              {address && (
+                <div className="w-8 h-8 rounded-full overflow-hidden bg-white border border-gray-200 flex items-center justify-center flex-shrink-0 shadow-sm">
+                  {userProfile?.avatar ? (
+                    <img src={userProfile.avatar} alt="User Avatar" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full bg-base-blue flex items-center justify-center text-white text-[10px]">
+                      {address.slice(2,4).toUpperCase()}
+                    </div>
+                  )}
+                </div>
+              )}
             </button>
           </div>
         </div>
@@ -453,7 +556,7 @@ const App = () => {
                 type="text" 
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="search-name.base.eth"
+                placeholder="Enter name (e.g. jesse)"
                 className="w-full h-16 pl-6 pr-16 rounded-2xl border-2 border-transparent shadow-lg shadow-blue-900/5 focus:outline-none focus:border-base-blue/30 text-xl font-medium placeholder:text-gray-300 transition-all"
               />
               <button 
@@ -476,17 +579,22 @@ const App = () => {
           {searchResult && (
             <div className="max-w-2xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
               {searchResult.available ? (
-                <Card className="flex items-center justify-between bg-green-50/50 border-green-100">
-                  <div>
+                <Card className="flex items-center justify-between bg-green-50/50 border-green-100 border-2 overflow-hidden relative">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-green-100/30 rounded-full -mr-16 -mt-16 blur-2xl"></div>
+                  <div className="z-10 relative">
                     <h3 className="text-2xl font-bold text-gray-900 mb-1">{searchResult.name}</h3>
-                    <p className="text-green-600 font-medium flex items-center gap-2">
-                      <CheckCircle2 size={18} /> Available / Unclaimed
-                    </p>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                      <p className="text-green-600 font-bold flex items-center gap-2">
+                        <CheckCircle2 size={18} /> Available / Unclaimed
+                      </p>
+                      <div className="flex items-center gap-1.5 px-3 py-1 bg-base-blue text-white rounded-full text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-200 animate-bounce sm:animate-none">
+                        <Sparkles size={12} fill="white" /> Ready to Mint
+                      </div>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <span className="text-xs text-gray-400 font-medium block max-w-[200px]">
-                      Basenames are integrated with the ENS Registry on Base.
-                    </span>
+                  <div className="text-right z-10 relative hidden sm:block">
+                    <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block mb-1">Status</span>
+                    <span className="text-xs text-green-700 bg-green-100 px-2 py-1 rounded font-bold">Unclaimed</span>
                   </div>
                 </Card>
               ) : (
@@ -499,7 +607,13 @@ const App = () => {
                     <div className="relative -mt-12 mb-6">
                       <div className="w-24 h-24 rounded-2xl bg-white p-1.5 shadow-md inline-block">
                         {searchResult.data?.avatar ? (
-                          <img src={searchResult.data.avatar} alt="Avatar" className="w-full h-full object-cover rounded-xl bg-gray-100" />
+                          <img 
+                            src={searchResult.data.avatar} 
+                            alt="Avatar" 
+                            className="w-full h-full object-cover rounded-xl bg-gray-100 transition-opacity duration-300"
+                            onLoad={(e) => (e.currentTarget.style.opacity = "1")}
+                            style={{ opacity: 0 }}
+                          />
                         ) : (
                           <div className="w-full h-full bg-gray-100 rounded-xl flex items-center justify-center text-gray-300">
                             <User size={40} />
@@ -574,7 +688,12 @@ const App = () => {
               {/* Step 1: Parent */}
               <Card className="relative overflow-hidden">
                 <div className="absolute top-0 right-0 p-4 opacity-10"><Box size={64}/></div>
-                <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><span className="w-6 h-6 rounded-full bg-black text-white flex items-center justify-center text-xs">1</span> Parent Name</h3>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-bold text-lg flex items-center gap-2"><span className="w-6 h-6 rounded-full bg-black text-white flex items-center justify-center text-xs">1</span> Parent Name</h3>
+                  {userProfile?.name && parentName === userProfile.name && (
+                    <span className="text-[9px] font-black uppercase text-base-blue bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">Synced</span>
+                  )}
+                </div>
                 <input 
                   type="text" 
                   value={parentName}
