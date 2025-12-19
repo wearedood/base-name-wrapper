@@ -15,7 +15,8 @@ import {
   Box,
   ExternalLink,
   Sparkles,
-  ShieldAlert
+  ShieldAlert,
+  Settings
 } from "lucide-react";
 
 // Add declaration for window.ethereum
@@ -28,7 +29,7 @@ declare global {
 // --- Configuration ---
 const BASE_CHAIN_ID_HEX = "0x2105"; // 8453
 const BASE_CHAIN_ID_DECIMAL = 8453;
-const BASE_RPC_URL = "https://base.llamarpc.com";
+const BASE_RPC_URL = "https://mainnet.base.org"; // Using official Base Mainnet RPC
 const BASE_EXPLORER = "https://basescan.org";
 
 /**
@@ -36,11 +37,9 @@ const BASE_EXPLORER = "https://basescan.org";
  */
 const REGISTRY_ADDRESS = ethers.getAddress("0x00000000000c2e074ec69a0dfb2997ba6c7d2e1e");
 const RESOLVER_ADDRESS = ethers.getAddress("0xc6d566a56a1aff6508b41f6c90ff131615583bcd");
-const REGISTRAR_ADDRESS = ethers.getAddress("0x03c4738ee98ae44591e1a4a4f3cab6641d95dd9a");
 
 /**
  * Helper to convert a .base.eth name into its corresponding node hash.
- * Normalizes the input by lowercasing and trimming.
  */
 const toNodeHash = (name: string): string => {
   if (!name) return ethers.ZeroHash;
@@ -56,7 +55,6 @@ const resolveAvatarUrl = (name: string, record: string): string => {
   if (record.startsWith("ipfs://")) {
     return record.replace("ipfs://", "https://ipfs.io/ipfs/");
   }
-  // Fallback to ENS Metadata Service for NFT-based avatars (eip155)
   return `https://metadata.ens.domains/mainnet/avatar/${name}`;
 };
 
@@ -80,6 +78,7 @@ interface ProfileData {
   twitter?: string;
   url?: string;
   address?: string;
+  isMine: boolean;
 }
 
 // --- Components ---
@@ -107,48 +106,38 @@ const PixelCanvas = () => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Config
     const w = canvas.width;
     const h = canvas.height;
-    const pSize = 4; // Size of "pixel"
+    const pSize = 4;
     const cols = Math.ceil(w / pSize);
     const rows = Math.ceil(h / pSize);
 
-    // Palette
     const C_BG = '#000000';
     const C_BLUE = '#0052FF';
     const C_ORANGE = '#F97316'; 
     const C_DARK_BLUE = '#172554';
 
-    // Clear
     ctx.fillStyle = C_BG;
     ctx.fillRect(0, 0, w, h);
 
-    // Procedural Terrain Generation
     const terrain = new Float32Array(cols);
     let yOff = rows * 0.7;
     
     for(let i = 0; i < cols; i++) {
         const jaggedness = (Math.random() - 0.5) * 8; 
         const slope = (Math.random() - 0.5) * 2; 
-        
         yOff += jaggedness + slope;
-        
         if(yOff < rows * 0.2) yOff = rows * 0.2 + 2; 
         if(yOff > rows * 0.9) yOff = rows * 0.9 - 2;
-        
         terrain[i] = yOff;
     }
 
-    // Draw Terrain
     for(let i = 0; i < cols; i++) {
         const ceiling = terrain[i];
         for(let j = 0; j < rows; j++) {
             if (j > ceiling) {
-                const depth = j - ceiling;
                 const noise = Math.random();
-                
-                if (depth < 2 && noise > 0.3) {
+                if (j - ceiling < 2 && noise > 0.3) {
                      ctx.fillStyle = C_BLUE;
                 } else if (noise > 0.65) {
                     ctx.fillStyle = C_ORANGE;
@@ -162,35 +151,24 @@ const PixelCanvas = () => {
         }
     }
     
-    // Add "Glitch" stars/particles
     for(let k = 0; k < 80; k++) {
         const rx = Math.floor(Math.random() * cols);
         const ry = Math.floor(Math.random() * (rows * 0.6));
         if (ry < terrain[rx]) {
              ctx.fillStyle = Math.random() > 0.5 ? C_BLUE : C_ORANGE;
-             const starSize = Math.random() > 0.8 ? pSize * 2 : pSize;
-             ctx.fillRect(rx * pSize, ry * pSize, starSize, starSize);
+             ctx.fillRect(rx * pSize, ry * pSize, pSize, pSize);
         }
     }
   }, []);
 
   return (
     <div className="w-full h-full min-h-[300px] bg-black relative overflow-hidden">
-        <canvas 
-            ref={canvasRef} 
-            width={600} 
-            height={600} 
-            className="w-full h-full object-cover" 
-            style={{ imageRendering: 'pixelated' }}
-        />
+        <canvas ref={canvasRef} width={600} height={600} className="w-full h-full object-cover" style={{ imageRendering: 'pixelated' }} />
         <div className="absolute top-4 right-4 flex flex-col gap-2 items-end">
              <div className="flex items-center gap-1 text-white text-[10px] font-mono opacity-80 bg-black/50 px-2 py-1 rounded">
                 <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
                 Live on Base
              </div>
-        </div>
-        <div className="absolute bottom-4 right-4 text-white text-[10px] font-mono opacity-50 rotate-90 origin-bottom-right translate-x-full whitespace-nowrap">
-            coinbase ■ base
         </div>
     </div>
   );
@@ -199,19 +177,13 @@ const PixelCanvas = () => {
 const AdBanner = () => (
     <div className="max-w-5xl mx-auto my-16 rounded-[2.5rem] overflow-hidden bg-[#F4F5F6] grid grid-cols-1 md:grid-cols-2 shadow-sm border border-gray-200 group">
         <div className="p-12 flex flex-col justify-center relative">
-            <div className="absolute top-0 bottom-0 left-8 hidden sm:flex flex-col justify-between py-12 text-blue-600 font-mono text-xs font-bold tracking-[0.3em] uppercase opacity-60 select-none pointer-events-none">
-                <span className="rotate-180" style={{writingMode: 'vertical-rl'}}>Request</span>
-                <span className="rotate-180" style={{writingMode: 'vertical-rl'}}>For</span>
-                <span className="rotate-180" style={{writingMode: 'vertical-rl'}}>Startups</span>
-            </div>
             <div className="sm:pl-16 text-center sm:text-left z-10">
                 <h2 className="text-6xl sm:text-7xl font-[900] tracking-tighter leading-[0.85] text-black mb-8 group-hover:scale-105 transition-transform duration-500 origin-left">
-                    Build<br/>
-                    Onchain
+                    Build<br/>Onchain
                 </h2>
                 <div className="space-y-6">
                     <p className="text-gray-500 font-medium max-w-xs mx-auto sm:mx-0 leading-relaxed">
-                        In collaboration with Base and Coinbase Ventures, Y Combinator announced Request for Startups: Fintech 3.0.
+                        Join the Base ecosystem. Register your .base.eth name and start building the future of the internet.
                     </p>
                     <a href="https://base.org" target="_blank" className="inline-flex items-center gap-2 bg-base-blue text-white px-8 py-4 rounded-full font-bold hover:bg-blue-700 transition-all hover:pr-10">
                         Start Building <ArrowRight size={18} />
@@ -229,33 +201,30 @@ const AdBanner = () => (
 // --- MAIN APP ---
 
 const App = () => {
-  // --- State ---
   const [provider, setProvider] = useState<BrowserProvider | null>(null);
   const [signer, setSigner] = useState<ethers.JsonRpcSigner | null>(null);
   const [address, setAddress] = useState<string | null>(null);
   const [chainId, setChainId] = useState<number | null>(null);
   const [userProfile, setUserProfile] = useState<{name?: string, avatar?: string} | null>(null);
 
-  // Search State
   const [searchTerm, setSearchTerm] = useState("");
   const [isSearching, setIsSearching] = useState(false);
   const [searchResult, setSearchResult] = useState<{name: string, available: boolean, data?: ProfileData} | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
 
-  // Mint State
   const [parentName, setParentName] = useState("");
   const [subLabel, setSubLabel] = useState("");
   const [targetAddress, setTargetAddress] = useState("");
   const [isMinting, setIsMinting] = useState(false);
   const [mintStatus, setMintStatus] = useState<{type: 'success' | 'error', msg: string} | null>(null);
 
-  // --- Wallet & Network ---
+  const subnameRef = useRef<HTMLElement>(null);
 
   const connectWallet = async () => {
-    if (!window.ethereum) return alert("Please install Coinbase Wallet");
+    if (!window.ethereum) return alert("Please install a Web3 wallet like Coinbase Wallet");
     try {
       const p = new BrowserProvider(window.ethereum);
-      const s = await p.getNetwork().then(() => p.getSigner());
+      const s = await p.getSigner();
       const net = await p.getNetwork();
       const accounts = await p.send("eth_requestAccounts", []);
       
@@ -268,20 +237,14 @@ const App = () => {
     }
   };
 
-  // Listen for chain/account changes
   useEffect(() => {
     if (window.ethereum) {
-      const handleChainChanged = (hexChainId: string) => {
-        setChainId(parseInt(hexChainId, 16));
-      };
-      const handleAccountsChanged = (accounts: string[]) => {
-        setAddress(accounts[0] || null);
-      };
+      const handleChainChanged = (hexChainId: string) => setChainId(parseInt(hexChainId, 16));
+      const handleAccountsChanged = (accounts: string[]) => setAddress(accounts[0] || null);
       
       window.ethereum.on('chainChanged', handleChainChanged);
       window.ethereum.on('accountsChanged', handleAccountsChanged);
       
-      // Initial check if already connected
       window.ethereum.request({ method: 'eth_chainId' }).then((hex: string) => setChainId(parseInt(hex, 16)));
       window.ethereum.request({ method: 'eth_accounts' }).then((accounts: string[]) => setAddress(accounts[0] || null));
 
@@ -292,19 +255,14 @@ const App = () => {
     }
   }, []);
 
-  // --- Profile Lookup & Parent Name Auto-population ---
   useEffect(() => {
     const fetchUserProfile = async () => {
-      // Use Base RPC specifically for reverse resolution
-      const activeProvider = provider || new JsonRpcProvider(BASE_RPC_URL);
+      const activeProvider = new JsonRpcProvider(BASE_RPC_URL);
       if (address) {
         try {
           const name = await activeProvider.lookupAddress(address);
           if (name && (name.toLowerCase().endsWith('.base.eth') || name.toLowerCase().endsWith('.eth'))) {
-            // Auto-populate the minting input
             setParentName(name);
-            
-            // Resolve Avatar for user
             const node = ethers.namehash(name);
             const registry = new Contract(REGISTRY_ADDRESS, REGISTRY_ABI, activeProvider);
             const resolverAddr = await registry.resolver(node).catch(() => ethers.ZeroAddress);
@@ -321,7 +279,6 @@ const App = () => {
             setParentName("");
           }
         } catch (err) {
-          console.debug("User profile lookup failed:", err);
           setUserProfile(null);
           setParentName("");
         }
@@ -331,7 +288,7 @@ const App = () => {
       }
     };
     fetchUserProfile();
-  }, [address, provider]);
+  }, [address]);
 
   const switchToBase = async () => {
     if (!window.ethereum) return;
@@ -356,75 +313,67 @@ const App = () => {
     }
   };
 
-  // --- Core Logic ---
-
   const handleSearch = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     let query = searchTerm.trim().toLowerCase();
-    
     if (!query) return;
-
-    // Automatically append .base.eth if no domain is provided
-    if (!query.includes('.')) {
-      query += ".base.eth";
-    }
+    if (!query.includes('.')) query += ".base.eth";
     
-    const readProvider = provider || new JsonRpcProvider(BASE_RPC_URL);
-    
+    const activeProvider = new JsonRpcProvider(BASE_RPC_URL);
     setIsSearching(true);
     setSearchError(null);
     setSearchResult(null);
 
     try {
-      // Use helper function for nodehash conversion
-      const node = toNodeHash(query);
-      const registry = new Contract(REGISTRY_ADDRESS, REGISTRY_ABI, readProvider);
-      
-      let owner = ethers.ZeroAddress;
-      try {
-        owner = await registry.owner(node);
-      } catch (ownerErr) {
-        console.warn("Owner call failed, assuming available", ownerErr);
-      }
+      // Logic Improvement: Use Standard Resolution Method
+      const resolvedAddress = await activeProvider.resolveName(query);
 
-      if (owner === ethers.ZeroAddress) {
+      if (!resolvedAddress) {
+        // Name is Available
         setSearchResult({ name: query, available: true });
       } else {
+        // Name is Taken
+        const node = toNodeHash(query);
+        const registry = new Contract(REGISTRY_ADDRESS, REGISTRY_ABI, activeProvider);
+        
+        let owner = ethers.ZeroAddress;
         let resolverAddr = ethers.ZeroAddress;
         try {
-            resolverAddr = await registry.resolver(node);
-        } catch (resErr) {
-            console.debug("Resolver lookup failed");
-        }
-        
-        if (resolverAddr === ethers.ZeroAddress) {
-            resolverAddr = RESOLVER_ADDRESS;
+          owner = await registry.owner(node);
+          resolverAddr = await registry.resolver(node);
+        } catch (err) {
+          console.debug("Ownership lookup failed, using resolution defaults");
         }
 
-        let profile: ProfileData = { owner, resolver: resolverAddr };
+        if (resolverAddr === ethers.ZeroAddress) resolverAddr = RESOLVER_ADDRESS;
 
-        try {
-            const resolver = new Contract(resolverAddr, RESOLVER_ABI, readProvider);
-            const [avatarRecord, twitter, url, addr] = await Promise.all([
-                resolver.text(node, "avatar").catch(() => ""),
-                resolver.text(node, "com.twitter").catch(() => ""),
-                resolver.text(node, "url").catch(() => ""),
-                resolver.addr(node).catch(() => "")
-            ]);
+        const resolver = new Contract(resolverAddr, RESOLVER_ABI, activeProvider);
+        const [avatarRecord, twitter, url] = await Promise.all([
+          resolver.text(node, "avatar").catch(() => ""),
+          resolver.text(node, "com.twitter").catch(() => ""),
+          resolver.text(node, "url").catch(() => "")
+        ]);
 
-            // Resolve Avatar properly using helper
-            const avatar = resolveAvatarUrl(query, avatarRecord);
+        const avatar = resolveAvatarUrl(query, avatarRecord);
+        const isMine = (address?.toLowerCase() === owner.toLowerCase()) || (address?.toLowerCase() === resolvedAddress.toLowerCase());
 
-            profile = { ...profile, avatar, twitter, url, address: addr };
-        } catch (resolverErr) {
-            console.warn("Could not query resolver details", resolverErr);
-        }
-        
-        setSearchResult({ name: query, available: false, data: profile });
+        setSearchResult({ 
+          name: query, 
+          available: false, 
+          data: { 
+            owner, 
+            resolver: resolverAddr, 
+            avatar, 
+            twitter, 
+            url, 
+            address: resolvedAddress,
+            isMine 
+          } 
+        });
       }
     } catch (err) {
       console.error(err);
-      setSearchError("Failed to resolve name. The RPC might be busy, please try again.");
+      setSearchError("Could not verify name. Please check your connection and try again.");
     } finally {
       setIsSearching(false);
     }
@@ -440,37 +389,22 @@ const App = () => {
       const cleanLabel = subLabel.toLowerCase().trim();
       const cleanTarget = targetAddress.trim();
       
-      if (!ethers.isAddress(cleanTarget)) {
-        throw new Error("Invalid target address provided.");
-      }
+      if (!ethers.isAddress(cleanTarget)) throw new Error("Invalid target address.");
 
-      const fullSubname = `${cleanLabel}.${cleanParent}`;
-      
-      // Use helper function for parent nodehash conversion
       const parentNode = toNodeHash(cleanParent);
       const registry = new Contract(REGISTRY_ADDRESS, REGISTRY_ABI, signer);
       
-      let owner = ethers.ZeroAddress;
-      try {
-        owner = await registry.owner(parentNode);
-      } catch (err) {
-        throw new Error("Could not verify parent name ownership.");
-      }
-
+      const owner = await registry.owner(parentNode);
       if (owner.toLowerCase() !== address?.toLowerCase()) {
-        throw new Error(`You do not own ${cleanParent}. Subnames can only be minted by the parent owner.`);
+        throw new Error(`You do not own ${cleanParent}. Subnames can only be minted by the owner.`);
       }
 
-      const labelHash = ethers.id(cleanLabel);
-      const tx = await registry.setSubnodeOwner(parentNode, labelHash, ethers.getAddress(cleanTarget));
-      setMintStatus({ type: 'success', msg: `Tx Submitted: ${tx.hash}` });
-      
+      const tx = await registry.setSubnodeOwner(parentNode, ethers.id(cleanLabel), ethers.getAddress(cleanTarget));
+      setMintStatus({ type: 'success', msg: `Transaction Submitted: ${tx.hash.slice(0, 20)}...` });
       await tx.wait();
-      setMintStatus({ type: 'success', msg: `Successfully minted ${fullSubname}!` });
+      setMintStatus({ type: 'success', msg: `Successfully minted ${cleanLabel}.${cleanParent}!` });
       setSubLabel("");
-      
     } catch (err: any) {
-      console.error(err);
       setMintStatus({ type: 'error', msg: err.reason || err.message || "Minting failed" });
     } finally {
       setIsMinting(false);
@@ -479,57 +413,36 @@ const App = () => {
 
   const isOnBase = chainId === BASE_CHAIN_ID_DECIMAL;
 
+  const scrollToSubname = () => {
+    subnameRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (searchResult?.name) setParentName(searchResult.name);
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 text-black font-sans selection:bg-base-blue selection:text-white pb-20">
-      
-      {/* Header */}
       <nav className="w-full bg-white border-b border-gray-200 sticky top-0 z-50">
         <div className="max-w-5xl mx-auto px-6 h-20 flex justify-between items-center">
           <div className="flex items-center gap-3">
             <BaseLogo />
             <span className="font-bold text-xl tracking-tight">Base Names</span>
           </div>
-          
-          <div className="flex items-center gap-3 sm:gap-4">
+          <div className="flex items-center gap-3">
             {address && (
               isOnBase ? (
                 <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wide bg-blue-50 text-base-blue border border-blue-100">
-                  <div className="w-2 h-2 rounded-full bg-base-blue"></div>
-                  Base
+                  <div className="w-2 h-2 rounded-full bg-base-blue"></div>Base
                 </div>
               ) : (
-                <button 
-                  onClick={switchToBase}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] sm:text-xs font-bold uppercase tracking-wide bg-red-50 text-red-600 border border-red-100 hover:bg-red-100 transition-colors animate-pulse whitespace-nowrap"
-                >
-                  <ShieldAlert size={14} />
-                  Switch to Base
+                <button onClick={switchToBase} className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wide bg-red-50 text-red-600 border border-red-100 hover:bg-red-100 animate-pulse">
+                  <ShieldAlert size={14} />Switch to Base
                 </button>
               )
             )}
-            
-            <button 
-              onClick={address ? undefined : connectWallet}
-              className={`
-                flex items-center gap-2 sm:gap-3 rounded-full font-bold transition-all active:scale-95
-                ${address 
-                  ? "bg-gray-100 text-black pr-1 pl-4 py-1 border border-gray-200 hover:bg-gray-200" 
-                  : "bg-black text-white px-6 py-2.5 hover:bg-gray-800 shadow-sm"
-                }
-              `}
-            >
-              <span className="text-xs sm:text-sm font-bold">
-                {address ? `${address.slice(0,6)}...${address.slice(-4)}` : "Connect Wallet"}
-              </span>
+            <button onClick={address ? undefined : connectWallet} className={`flex items-center gap-3 rounded-full font-bold transition-all active:scale-95 ${address ? "bg-gray-100 text-black pr-1 pl-4 py-1 border border-gray-200 hover:bg-gray-200" : "bg-black text-white px-6 py-2.5 hover:bg-gray-800 shadow-sm"}`}>
+              <span className="text-xs sm:text-sm font-bold">{address ? `${address.slice(0,6)}...${address.slice(-4)}` : "Connect Wallet"}</span>
               {address && (
                 <div className="w-8 h-8 rounded-full overflow-hidden bg-white border border-gray-200 flex items-center justify-center flex-shrink-0 shadow-sm">
-                  {userProfile?.avatar ? (
-                    <img src={userProfile.avatar} alt="User Avatar" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full bg-base-blue flex items-center justify-center text-white text-[10px]">
-                      {address.slice(2,4).toUpperCase()}
-                    </div>
-                  )}
+                  {userProfile?.avatar ? <img src={userProfile.avatar} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-base-blue flex items-center justify-center text-white text-[10px]">{address.slice(2,4).toUpperCase()}</div>}
                 </div>
               )}
             </button>
@@ -538,122 +451,67 @@ const App = () => {
       </nav>
 
       <main className="max-w-5xl mx-auto px-6 py-12 space-y-4">
-
-        {/* --- SECTION 1: SEARCH --- */}
         <section>
           <div className="text-center mb-10">
-            <h1 className="text-5xl font-[900] tracking-tighter mb-4">
-              Find your <span className="text-base-blue">Base</span> identity.
-            </h1>
-            <p className="text-gray-500 text-lg">
-              Search for .base.eth names, view profiles, and check availability.
-            </p>
+            <h1 className="text-5xl font-[900] tracking-tighter mb-4">Find your <span className="text-base-blue">Base</span> identity.</h1>
+            <p className="text-gray-500 text-lg">Check availability for .base.eth names and manage your profile records.</p>
           </div>
-
           <div className="max-w-2xl mx-auto relative mb-12">
             <form onSubmit={handleSearch} className="relative z-10">
-              <input 
-                type="text" 
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Enter name (e.g. jesse)"
-                className="w-full h-16 pl-6 pr-16 rounded-2xl border-2 border-transparent shadow-lg shadow-blue-900/5 focus:outline-none focus:border-base-blue/30 text-xl font-medium placeholder:text-gray-300 transition-all"
-              />
-              <button 
-                type="submit"
-                disabled={isSearching}
-                className="absolute right-2 top-2 h-12 w-12 bg-base-blue hover:bg-blue-600 text-white rounded-xl flex items-center justify-center transition-colors disabled:opacity-70"
-              >
-                {isSearching ? <Loader2 className="animate-spin" /> : <Search size={24} />}
-              </button>
+              <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search names..." className="w-full h-16 pl-6 pr-16 rounded-2xl border-2 border-transparent shadow-lg shadow-blue-900/5 focus:outline-none focus:border-base-blue/30 text-xl font-medium placeholder:text-gray-300 transition-all" />
+              <button type="submit" disabled={isSearching} className="absolute right-2 top-2 h-12 w-12 bg-base-blue hover:bg-blue-600 text-white rounded-xl flex items-center justify-center transition-colors disabled:opacity-70">{isSearching ? <Loader2 className="animate-spin" /> : <Search size={24} />}</button>
             </form>
             <div className="absolute -inset-1 bg-gradient-to-r from-blue-100 to-purple-100 rounded-2xl blur opacity-50 -z-10"></div>
           </div>
 
-          {searchError && (
-             <div className="max-w-2xl mx-auto p-4 bg-red-50 text-red-600 rounded-xl flex items-center gap-2 mb-8 animate-in fade-in slide-in-from-bottom-2">
-               <AlertCircle size={20} /> {searchError}
-             </div>
-          )}
+          {searchError && <div className="max-w-2xl mx-auto p-4 bg-red-50 text-red-600 rounded-xl flex items-center gap-2 mb-8 animate-in fade-in slide-in-from-bottom-2"><AlertCircle size={20} /> {searchError}</div>}
 
           {searchResult && (
             <div className="max-w-2xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
               {searchResult.available ? (
                 <Card className="flex items-center justify-between bg-green-50/50 border-green-100 border-2 overflow-hidden relative">
                   <div className="absolute top-0 right-0 w-32 h-32 bg-green-100/30 rounded-full -mr-16 -mt-16 blur-2xl"></div>
-                  <div className="z-10 relative">
+                  <div className="z-10">
                     <h3 className="text-2xl font-bold text-gray-900 mb-1">{searchResult.name}</h3>
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                      <p className="text-green-600 font-bold flex items-center gap-2">
-                        <CheckCircle2 size={18} /> Available / Unclaimed
-                      </p>
-                      <div className="flex items-center gap-1.5 px-3 py-1 bg-base-blue text-white rounded-full text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-200 animate-bounce sm:animate-none">
-                        <Sparkles size={12} fill="white" /> Ready to Mint
-                      </div>
-                    </div>
+                    <p className="text-green-600 font-bold flex items-center gap-2"><CheckCircle2 size={18} /> Available to Mint</p>
                   </div>
-                  <div className="text-right z-10 relative hidden sm:block">
-                    <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block mb-1">Status</span>
-                    <span className="text-xs text-green-700 bg-green-100 px-2 py-1 rounded font-bold">Unclaimed</span>
-                  </div>
+                  <div className="z-10"><Sparkles className="text-base-blue animate-pulse" size={32} /></div>
                 </Card>
               ) : (
-                <div className="bg-white rounded-[2rem] shadow-xl shadow-blue-900/5 overflow-hidden border border-gray-100">
-                  <div className="h-32 bg-gradient-to-r from-base-blue to-blue-600 relative">
+                <div className={`bg-white rounded-[2rem] shadow-xl overflow-hidden border ${searchResult.data?.isMine ? 'border-base-blue/50 ring-4 ring-blue-50' : 'border-gray-100'}`}>
+                  <div className={`h-32 relative ${searchResult.data?.isMine ? 'bg-gradient-to-r from-base-blue to-blue-400' : 'bg-gradient-to-r from-gray-200 to-gray-300'}`}>
                      <div className="absolute inset-0 opacity-10" style={{backgroundImage: 'radial-gradient(circle, #fff 1px, transparent 1px)', backgroundSize: '20px 20px'}}></div>
+                     {searchResult.data?.isMine && (
+                       <div className="absolute top-4 right-6 bg-white/20 backdrop-blur-md px-3 py-1 rounded-full text-white text-[10px] font-black uppercase tracking-wider border border-white/30 flex items-center gap-1.5">
+                         <User size={12}/> Owned by You
+                       </div>
+                     )}
                   </div>
-                  
-                  <div className="px-8 pb-8">
+                  <div className="px-8 pb-8 relative">
                     <div className="relative -mt-12 mb-6">
                       <div className="w-24 h-24 rounded-2xl bg-white p-1.5 shadow-md inline-block">
-                        {searchResult.data?.avatar ? (
-                          <img 
-                            src={searchResult.data.avatar} 
-                            alt="Avatar" 
-                            className="w-full h-full object-cover rounded-xl bg-gray-100 transition-opacity duration-300"
-                            onLoad={(e) => (e.currentTarget.style.opacity = "1")}
-                            style={{ opacity: 0 }}
-                          />
-                        ) : (
-                          <div className="w-full h-full bg-gray-100 rounded-xl flex items-center justify-center text-gray-300">
-                            <User size={40} />
-                          </div>
-                        )}
+                        {searchResult.data?.avatar ? <img src={searchResult.data.avatar} className="w-full h-full object-cover rounded-xl" /> : <div className="w-full h-full bg-gray-100 rounded-xl flex items-center justify-center text-gray-300"><User size={40} /></div>}
                       </div>
                     </div>
-
-                    <div className="mb-8">
-                      <h2 className="text-3xl font-[800] tracking-tight text-gray-900 mb-2">{searchResult.name}</h2>
-                      <div className="flex flex-wrap gap-3">
-                        {searchResult.data?.address && (
-                          <span className="px-3 py-1 bg-gray-100 rounded-md text-xs font-mono text-gray-500 flex items-center gap-1">
-                             <Wallet size={12}/> {searchResult.data.address.slice(0,6)}...{searchResult.data.address.slice(-4)}
-                          </span>
-                        )}
-                         <span className="px-3 py-1 bg-blue-50 text-base-blue rounded-md text-xs font-bold uppercase">
-                           Registered
-                         </span>
+                    <div className="mb-8 flex justify-between items-start">
+                      <div>
+                        <h2 className="text-3xl font-[800] tracking-tight text-gray-900 mb-2">{searchResult.name}</h2>
+                        <span className="px-3 py-1 bg-gray-100 rounded-md text-xs font-mono text-gray-500 flex items-center gap-1 w-fit"><Wallet size={12}/> {searchResult.data?.address?.slice(0,6)}...{searchResult.data?.address?.slice(-4)}</span>
                       </div>
+                      {searchResult.data?.isMine && (
+                        <button onClick={scrollToSubname} className="bg-base-blue text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-blue-700 transition-colors flex items-center gap-2">
+                          <Settings size={14}/> Manage
+                        </button>
+                      )}
                     </div>
-
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                        <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
-                         <span className="text-xs font-bold text-gray-400 uppercase tracking-wider block mb-1">Twitter / X</span>
-                         <div className="flex items-center gap-2 text-gray-900 font-medium">
-                           <Twitter size={18} className="text-base-blue"/> 
-                           {searchResult.data?.twitter || <span className="text-gray-400 italic font-normal">Not set</span>}
-                         </div>
+                         <span className="text-xs font-bold text-gray-400 uppercase tracking-wider block mb-1">Twitter</span>
+                         <div className="flex items-center gap-2 text-gray-900 font-medium"><Twitter size={18} className="text-base-blue"/> {searchResult.data?.twitter || "Not set"}</div>
                        </div>
                        <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
                          <span className="text-xs font-bold text-gray-400 uppercase tracking-wider block mb-1">Website</span>
-                         <div className="flex items-center gap-2 text-gray-900 font-medium overflow-hidden">
-                           <Globe size={18} className="text-base-blue flex-shrink-0"/> 
-                           <a href={searchResult.data?.url?.startsWith('http') ? searchResult.data.url : `https://${searchResult.data?.url}`} target="_blank" className="truncate hover:underline">{searchResult.data?.url || <span className="text-gray-400 italic font-normal">Not set</span>}</a>
-                         </div>
-                       </div>
-                       <div className="col-span-1 md:col-span-2 p-4 bg-gray-50 rounded-xl border border-gray-100">
-                         <span className="text-xs font-bold text-gray-400 uppercase tracking-wider block mb-1">Owner Address</span>
-                         <span className="font-mono text-sm text-gray-600 break-all">{searchResult.data?.owner}</span>
+                         <div className="flex items-center gap-2 text-gray-900 font-medium overflow-hidden"><Globe size={18} className="text-base-blue flex-shrink-0"/> <span className="truncate">{searchResult.data?.url || "Not set"}</span></div>
                        </div>
                     </div>
                   </div>
@@ -663,99 +521,45 @@ const App = () => {
           )}
         </section>
 
-        {/* --- PIXEL ART AD SECTION --- */}
         <AdBanner />
 
-        {/* --- SECTION 2: SUBNAME MINTING --- */}
-        <section className="max-w-4xl mx-auto pt-10 border-t border-gray-200">
+        <section ref={subnameRef} className="max-w-4xl mx-auto pt-10 border-t border-gray-200">
            <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
-             <div>
-               <h2 className="text-3xl font-[800] tracking-tight">Subname Manager</h2>
-               <p className="text-gray-500">Issue subnames for a name you own (e.g. mint <span className="font-mono text-black bg-gray-100 px-1 rounded">bob.myname.base.eth</span>).</p>
-             </div>
-             {!address ? (
-               <button onClick={connectWallet} className="bg-base-blue text-white px-6 py-3 rounded-full font-bold shadow-lg shadow-blue-200">
-                 Connect to Mint
-               </button>
-             ) : !isOnBase ? (
-               <button onClick={switchToBase} className="bg-red-500 text-white px-6 py-3 rounded-full font-bold">
-                 Switch to Base
-               </button>
-             ) : null}
+             <div><h2 className="text-3xl font-[800] tracking-tight">Subname Manager</h2><p className="text-gray-500">Issue subnames for a name you own.</p></div>
+             {!address ? <button onClick={connectWallet} className="bg-base-blue text-white px-6 py-3 rounded-full font-bold shadow-lg shadow-blue-200">Connect to Mint</button> : !isOnBase ? <button onClick={switchToBase} className="bg-red-500 text-white px-6 py-3 rounded-full font-bold">Switch to Base</button> : null}
            </div>
-
            <div className={`grid grid-cols-1 md:grid-cols-3 gap-8 ${!address || !isOnBase ? 'opacity-50 pointer-events-none grayscale' : ''}`}>
-              {/* Step 1: Parent */}
               <Card className="relative overflow-hidden">
                 <div className="absolute top-0 right-0 p-4 opacity-10"><Box size={64}/></div>
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="font-bold text-lg flex items-center gap-2"><span className="w-6 h-6 rounded-full bg-black text-white flex items-center justify-center text-xs">1</span> Parent Name</h3>
-                  {userProfile?.name && parentName === userProfile.name && (
-                    <span className="text-[9px] font-black uppercase text-base-blue bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">Synced</span>
-                  )}
+                  {userProfile?.name && parentName === userProfile.name && <span className="text-[9px] font-black uppercase text-base-blue bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">Synced</span>}
                 </div>
-                <input 
-                  type="text" 
-                  value={parentName}
-                  onChange={(e) => setParentName(e.target.value)}
-                  placeholder="e.g. my-org.base.eth"
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:border-base-blue transition-colors mb-2"
-                />
-                <p className="text-xs text-gray-400">Must be owned by connected wallet.</p>
+                <input type="text" value={parentName} onChange={(e) => setParentName(e.target.value)} placeholder="e.g. myname.base.eth" className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:border-base-blue transition-colors mb-2" />
+                <p className="text-xs text-gray-400">Owner only access.</p>
               </Card>
-
-              {/* Step 2: Details */}
               <Card className="relative md:col-span-2">
-                <h3 className="font-bold text-lg mb-6 flex items-center gap-2"><span className="w-6 h-6 rounded-full bg-black text-white flex items-center justify-center text-xs">2</span> Configuration</h3>
-                
+                <h3 className="font-bold text-lg mb-6 flex items-center gap-2"><span className="w-6 h-6 rounded-full bg-black text-white flex items-center justify-center text-xs">2</span> Details</h3>
                 <div className="flex flex-col md:flex-row gap-4 items-end">
                    <div className="flex-1 w-full">
-                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">New Label</label>
+                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Subname Label</label>
                      <div className="flex items-center">
-                       <input 
-                          type="text" 
-                          value={subLabel}
-                          onChange={(e) => setSubLabel(e.target.value)}
-                          placeholder="subname"
-                          className="flex-1 bg-gray-50 border border-gray-200 rounded-l-xl px-4 py-3 text-sm font-medium outline-none focus:border-base-blue"
-                        />
-                        <div className="bg-gray-100 border border-l-0 border-gray-200 px-3 py-3 rounded-r-xl text-gray-500 text-sm">
-                          .{parentName || '...'}
-                        </div>
+                       <input type="text" value={subLabel} onChange={(e) => setSubLabel(e.target.value)} placeholder="label" className="flex-1 bg-gray-50 border border-gray-200 rounded-l-xl px-4 py-3 text-sm font-medium outline-none focus:border-base-blue" />
+                       <div className="bg-gray-100 border border-l-0 border-gray-200 px-3 py-3 rounded-r-xl text-gray-500 text-sm">.{parentName || '...'}</div>
                      </div>
                    </div>
-                   
                    <div className="flex-[2] w-full">
-                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Target Owner Address</label>
-                     <input 
-                        type="text" 
-                        value={targetAddress}
-                        onChange={(e) => setTargetAddress(e.target.value)}
-                        placeholder="0x..."
-                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-mono outline-none focus:border-base-blue"
-                      />
+                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Target Address</label>
+                     <input type="text" value={targetAddress} onChange={(e) => setTargetAddress(e.target.value)} placeholder="0x..." className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-mono outline-none focus:border-base-blue" />
                    </div>
-
-                   <button 
-                     onClick={handleMintSubname}
-                     disabled={isMinting || !subLabel || !parentName || !targetAddress}
-                     className="h-[46px] px-6 bg-black text-white rounded-xl font-bold hover:bg-gray-800 disabled:bg-gray-200 disabled:text-gray-400 transition-colors flex items-center gap-2"
-                   >
-                     {isMinting ? <Loader2 className="animate-spin" size={18}/> : <ArrowRight size={18}/>}
-                     Mint
+                   <button onClick={handleMintSubname} disabled={isMinting || !subLabel || !parentName || !targetAddress} className="h-[46px] px-6 bg-black text-white rounded-xl font-bold hover:bg-gray-800 disabled:bg-gray-200 transition-colors flex items-center gap-2">
+                     {isMinting ? <Loader2 className="animate-spin" size={18}/> : <ArrowRight size={18}/>}Mint
                    </button>
                 </div>
-
-                {mintStatus && (
-                  <div className={`mt-6 p-4 rounded-xl flex items-start gap-3 text-sm ${mintStatus.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                    {mintStatus.type === 'success' ? <CheckCircle2 size={18} className="mt-0.5"/> : <AlertCircle size={18} className="mt-0.5"/>}
-                    <div className="break-all">{mintStatus.msg}</div>
-                  </div>
-                )}
+                {mintStatus && <div className={`mt-6 p-4 rounded-xl flex items-start gap-3 text-sm ${mintStatus.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}><div className="break-all">{mintStatus.msg}</div></div>}
               </Card>
            </div>
         </section>
-
       </main>
     </div>
   );
