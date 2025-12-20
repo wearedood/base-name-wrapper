@@ -96,22 +96,7 @@ const Card = ({ children, className = "" }: { children?: React.ReactNode, classN
   </div>
 );
 
-/**
- * Simple 1D Coherent Noise helper for organic terrain
- */
-const noise1D = (x: number, seed: number = 42) => {
-  const i = Math.floor(x);
-  const f = x - i;
-  const fade = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
-  const h = (p: number) => {
-    const val = Math.sin(p * 127.1 + seed) * 43758.5453;
-    return val - Math.floor(val);
-  };
-  const mix = (a: number, b: number, t: number) => a + t * (b - a);
-  return mix(h(i), h(i + 1), fade(f));
-};
-
-const PixelCanvas = () => {
+const PixelSolarSystem = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const requestRef = useRef<number>(0);
   const mouseRef = useRef({ x: -1000, y: -1000, active: false });
@@ -125,95 +110,81 @@ const PixelCanvas = () => {
     const w = canvas.width;
     const h = canvas.height;
     const pSize = 4;
-    const cols = Math.ceil(w / pSize);
-    const rows = Math.ceil(h / pSize);
+    const centerX = w / 2;
+    const centerY = h / 2;
 
-    const C_BG = '#000000';
-    const C_BLUE = '#0052FF';
-    const C_ORANGE = '#F97316'; 
-    const C_DARK_BLUE = '#172554';
-    const C_GLOW = '#3B82F6';
+    const COLORS = {
+      BG: '#000000',
+      SUN: '#FBBF24',
+      BLUE: '#0052FF',
+      ORANGE: '#F97316',
+      GRAY: '#4B5563',
+      WHITE: '#FFFFFF',
+      GLOW: '#3B82F6'
+    };
 
-    // Stars/Data Packets
-    const stars = Array.from({ length: 40 }, () => ({
-        x: Math.random() * cols,
-        y: Math.random() * (rows * 0.6),
-        speed: 0.05 + Math.random() * 0.1,
-        color: Math.random() > 0.85 ? C_ORANGE : C_BLUE
+    const planets = [
+      { dist: 60, speed: 0.02, size: 6, color: COLORS.ORANGE, angle: Math.random() * Math.PI * 2 },
+      { dist: 100, speed: 0.012, size: 8, color: COLORS.BLUE, angle: Math.random() * Math.PI * 2 },
+      { dist: 150, speed: 0.008, size: 10, color: COLORS.GRAY, angle: Math.random() * Math.PI * 2 },
+      { dist: 210, speed: 0.005, size: 12, color: COLORS.WHITE, angle: Math.random() * Math.PI * 2 }
+    ];
+
+    const stars = Array.from({ length: 60 }, () => ({
+      x: Math.random() * w,
+      y: Math.random() * h,
+      size: Math.random() > 0.8 ? pSize : pSize / 2,
+      blink: Math.random() * 0.05
     }));
 
     let time = 0;
 
     const animate = () => {
-      time += 0.015;
-      ctx.fillStyle = C_BG;
+      time += 0.01;
+      ctx.fillStyle = COLORS.BG;
       ctx.fillRect(0, 0, w, h);
 
-      // Draw background data packets
+      // Stars
       stars.forEach(s => {
-          s.x -= s.speed;
-          if (s.x < 0) s.x = cols;
-          ctx.fillStyle = s.color;
-          ctx.fillRect(Math.floor(s.x) * pSize, Math.floor(s.y) * pSize, pSize, pSize);
+        const opacity = 0.3 + Math.abs(Math.sin(time * 2 + s.blink * 100)) * 0.7;
+        ctx.fillStyle = `rgba(255, 255, 255, ${opacity})`;
+        ctx.fillRect(Math.floor(s.x / pSize) * pSize, Math.floor(s.y / pSize) * pSize, s.size, s.size);
       });
 
-      // Draw interactive terrain
-      for(let i = 0; i < cols; i++) {
-          // Multilayer noise for organic peaks
-          const noiseVal = (
-            noise1D(i * 0.1 + time * 0.2) * 0.6 + 
-            noise1D(i * 0.25 - time * 0.1) * 0.3 +
-            noise1D(i * 0.05) * 0.1
-          );
-          
-          const baseHeight = rows * 0.6 + noiseVal * (rows * 0.25);
-          
-          // Interaction Calculation: Wave Ripple
-          const dx = (i * pSize) - mouseRef.current.x;
-          let waveDisplacement = 0;
-          
-          if (mouseRef.current.active) {
-             const dist = Math.abs(dx);
-             if (dist < 150) {
-                 // Attenuated sine wave based on distance
-                 const attenuation = Math.pow(1 - dist / 150, 1.5);
-                 // The wave "travels" outwards from the mouse
-                 waveDisplacement = Math.sin(dist * 0.05 - time * 5) * 12 * attenuation;
-             }
-          }
+      // Sun
+      ctx.fillStyle = COLORS.SUN;
+      const sunSize = 32 + Math.sin(time * 3) * 2;
+      ctx.fillRect(Math.floor((centerX - sunSize / 2) / pSize) * pSize, Math.floor((centerY - sunSize / 2) / pSize) * pSize, sunSize, sunSize);
+      
+      // Planets
+      planets.forEach((p, idx) => {
+        p.angle += p.speed;
+        
+        // Mouse interaction: speed up or glow
+        let interactiveSpeed = p.speed;
+        const dx = (centerX + Math.cos(p.angle) * p.dist) - mouseRef.current.x;
+        const dy = (centerY + Math.sin(p.angle) * p.dist) - mouseRef.current.y;
+        const distToMouse = Math.sqrt(dx * dx + dy * dy);
+        
+        if (mouseRef.current.active && distToMouse < 100) {
+          p.angle += p.speed * 2 * (1 - distToMouse / 100);
+          ctx.fillStyle = COLORS.GLOW;
+        } else {
+          ctx.fillStyle = p.color;
+        }
 
-          const ceiling = baseHeight - (waveDisplacement / pSize);
+        const px = centerX + Math.cos(p.angle) * p.dist;
+        const py = centerY + Math.sin(p.angle) * p.dist;
 
-          for(let j = 0; j < rows; j++) {
-              if (j > ceiling) {
-                  const dy = (j * pSize) - mouseRef.current.y;
-                  const dist = Math.sqrt(dx * dx + dy * dy);
-                  const inGlowRadius = dist < 100;
+        // Orbit paths (faint)
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, p.dist, 0, Math.PI * 2);
+        ctx.stroke();
 
-                  const r = Math.random();
-                  
-                  // Top cap of the terrain
-                  if (j - ceiling < 1.5 && r > 0.2) {
-                       ctx.fillStyle = inGlowRadius ? C_GLOW : C_BLUE;
-                  } else if (r > 0.92) {
-                      ctx.fillStyle = inGlowRadius ? C_ORANGE : C_BLUE;
-                  } else if (r > 0.7) {
-                      ctx.fillStyle = inGlowRadius ? C_BLUE : C_DARK_BLUE;
-                  } else {
-                      ctx.fillStyle = C_DARK_BLUE;
-                  }
-                  
-                  ctx.fillRect(i * pSize, j * pSize, pSize, pSize);
-              }
-          }
-      }
-
-      // Vertical Scanline near mouse
-      if (mouseRef.current.active) {
-          ctx.fillStyle = 'rgba(0, 82, 255, 0.08)';
-          const scanWidth = pSize * 2;
-          ctx.fillRect(Math.floor(mouseRef.current.x / pSize) * pSize - pSize, 0, scanWidth, h);
-      }
+        ctx.fillRect(Math.floor((px - p.size / 2) / pSize) * pSize, Math.floor((py - p.size / 2) / pSize) * pSize, pSize * (p.size / 4), pSize * (p.size / 4));
+      });
 
       requestRef.current = requestAnimationFrame(animate);
     };
@@ -225,9 +196,9 @@ const PixelCanvas = () => {
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     mouseRef.current = {
-        x: e.clientX - rect.left,
-        y: e.clientY - rect.top,
-        active: true
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+      active: true
     };
   };
 
@@ -237,27 +208,27 @@ const PixelCanvas = () => {
 
   return (
     <div 
-        className="w-full h-full min-h-[300px] bg-black relative overflow-hidden group"
+        className="w-full h-full min-h-[350px] bg-black relative overflow-hidden group"
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
     >
-        <canvas ref={canvasRef} width={600} height={600} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-[1.02]" style={{ imageRendering: 'pixelated' }} />
+        <canvas ref={canvasRef} width={600} height={600} className="w-full h-full object-cover transition-transform duration-700" style={{ imageRendering: 'pixelated' }} />
         <div className="absolute top-4 right-4 flex flex-col gap-2 items-end pointer-events-none">
              <div className="flex items-center gap-1 text-white text-[10px] font-mono opacity-80 bg-black/60 px-2 py-1 rounded-md backdrop-blur-sm border border-white/10">
-                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-                L2 Fluid Engine
+                <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></div>
+                L2 Orbit Engine
              </div>
         </div>
-        <div className="absolute inset-0 pointer-events-none bg-gradient-to-t from-black/20 to-transparent"></div>
+        <div className="absolute inset-0 pointer-events-none bg-gradient-to-t from-black/40 via-transparent to-transparent"></div>
     </div>
   );
 };
 
 const AdBanner = () => (
     <div className="max-w-5xl mx-auto my-16 rounded-[2.5rem] overflow-hidden bg-[#F4F5F6] grid grid-cols-1 md:grid-cols-2 shadow-sm border border-gray-200 group">
-        <div className="p-12 flex flex-col justify-center relative">
+        <div className="p-12 flex flex-col justify-center relative bg-white md:bg-transparent">
             <div className="sm:pl-16 text-center sm:text-left z-10">
-                <h2 className="text-6xl sm:text-7xl font-[900] tracking-tighter leading-[0.85] text-black mb-8 group-hover:scale-105 transition-transform duration-500 origin-left">
+                <h2 className="text-6xl sm:text-7xl font-[900] tracking-tighter leading-[0.85] text-black mb-8 group-hover:scale-105 transition-transform duration-500 origin-left selection:bg-black selection:text-white">
                     Build<br/>Onchain
                 </h2>
                 <div className="space-y-6">
@@ -272,7 +243,7 @@ const AdBanner = () => (
             <span className="absolute bottom-6 left-8 text-6xl font-[900] text-gray-200 -z-0 hidden sm:block">01</span>
         </div>
         <div className="h-full min-h-[350px] relative border-l border-white/20">
-            <PixelCanvas />
+            <PixelSolarSystem />
         </div>
     </div>
 );
@@ -293,7 +264,7 @@ const App = () => {
   const [subLabel, setSubLabel] = useState("");
   const [targetAddress, setTargetAddress] = useState("");
   const [isMinting, setIsMinting] = useState(false);
-  const [mintStatus, setMintStatus] = useState<{type: 'success' | 'error', msg: string} | null>(null);
+  const [mintStatus, setMintStatus] = useState<{type: 'success' | 'error', msg: string, txHash?: string} | null>(null);
 
   const subnameRef = useRef<HTMLElement>(null);
 
@@ -448,10 +419,7 @@ const App = () => {
   };
 
   const handleMintSubname = async () => {
-    console.log('Minting process started...');
-    
     if (!window.ethereum) {
-        console.error('No ethereum provider found.');
         alert('Please install a Web3 wallet to mint subnames.');
         return;
     }
@@ -483,38 +451,32 @@ const App = () => {
       if (!ethers.isAddress(cleanTarget)) throw new Error("Invalid target address.");
 
       const parentNode = toNodeHash(cleanParent);
-      const labelHash = ethers.id(cleanLabel); // keccak256(toUtf8Bytes(label))
+      const labelHash = ethers.id(cleanLabel);
       
-      console.log('Minting parameters calculated:', {
-        parentName: cleanParent,
-        parentNode,
-        subLabel: cleanLabel,
-        labelHash,
-        target: cleanTarget
-      });
-
       const registry = new Contract(REGISTRY_ADDRESS, REGISTRY_ABI, freshSigner);
-      
       const owner = await registry.owner(parentNode);
-      console.log('Parent Owner on-chain:', owner);
       
       if (owner.toLowerCase() !== address?.toLowerCase()) {
         throw new Error(`Permission Denied: You do not own ${cleanParent}. Only the parent name owner can issue subnames.`);
       }
 
-      console.log('Submitting transaction to L2 Registry...');
       const tx = await registry.setSubnodeOwner(parentNode, labelHash, ethers.getAddress(cleanTarget));
       
-      setMintStatus({ type: 'success', msg: `Transaction Submitted: ${tx.hash.slice(0, 15)}...` });
-      console.log('Transaction Hash:', tx.hash);
+      setMintStatus({ 
+        type: 'success', 
+        msg: `Transaction submitted for ${cleanLabel}.${cleanParent}`,
+        txHash: tx.hash
+      });
 
       await tx.wait();
-      console.log('Minting Successful!');
-      setMintStatus({ type: 'success', msg: `Successfully minted ${cleanLabel}.${cleanParent}!` });
+      setMintStatus({ 
+        type: 'success', 
+        msg: `Successfully minted ${cleanLabel}.${cleanParent}!`,
+        txHash: tx.hash
+      });
       setSubLabel("");
     } catch (err: any) {
-      console.error('Minting error:', err);
-      setMintStatus({ type: 'error', msg: err.reason || err.message || "Minting failed. See console for details." });
+      setMintStatus({ type: 'error', msg: err.reason || err.message || "Minting failed." });
     } finally {
       setIsMinting(false);
     }
@@ -524,7 +486,6 @@ const App = () => {
 
   const scrollToSubname = () => {
     if (searchResult?.name) {
-        console.log(`Managing name: ${searchResult.name}`);
         setParentName(searchResult.name);
     }
     subnameRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -567,9 +528,10 @@ const App = () => {
       </nav>
 
       <main className="max-w-5xl mx-auto px-6 py-12 space-y-4">
+        {/* Search Section */}
         <section>
           <div className="text-center mb-10">
-            <h1 className="text-5xl font-[900] tracking-tighter mb-4">Find your <span className="text-base-blue">Base</span> identity.</h1>
+            <h1 className="text-5xl font-[900] tracking-tighter mb-4 selection:bg-base-blue selection:text-white">Find your <span className="text-base-blue">Base</span> identity.</h1>
             <p className="text-gray-500 text-lg">Direct resolution for .base.eth names on the Base L2 Network.</p>
           </div>
           <div className="max-w-2xl mx-auto relative mb-12">
@@ -637,11 +599,10 @@ const App = () => {
           )}
         </section>
 
-        <AdBanner />
-
+        {/* Subname Manager Block - Moved above Build Onchain */}
         <section ref={subnameRef} className="max-w-4xl mx-auto pt-10 border-t border-gray-200 scroll-mt-24">
            <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
-             <div><h2 className="text-3xl font-[800] tracking-tight">Subname Manager</h2><p className="text-gray-500">Issue subnames for a name you own on Base L2.</p></div>
+             <div><h2 className="text-3xl font-[800] tracking-tight selection:bg-base-blue selection:text-white">Subname Manager</h2><p className="text-gray-500">Issue subnames for a name you own on Base L2.</p></div>
              {!address ? (
                <button onClick={connectWallet} className="bg-base-blue text-white px-6 py-3 rounded-full font-bold shadow-lg shadow-blue-200">Connect to Mint</button>
              ) : !isOnBase ? (
@@ -675,7 +636,6 @@ const App = () => {
                 </h3>
                 
                 <div className="flex flex-col gap-6 flex-grow">
-                   {/* Subname Label Row */}
                    <div className="w-full">
                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Subname Label</label>
                      <div className="flex items-center">
@@ -692,7 +652,6 @@ const App = () => {
                      </div>
                    </div>
                    
-                   {/* Target Address Row - Now Full Width */}
                    <div className="w-full">
                      <div className="flex items-center justify-between mb-2">
                         <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">Target Owner Address</label>
@@ -712,7 +671,6 @@ const App = () => {
                       />
                    </div>
 
-                   {/* Action Button Area - Bottom Right */}
                    <div className="flex items-center justify-end mt-2 pt-4 border-t border-gray-50">
                      <button 
                        onClick={handleMintSubname} 
@@ -728,12 +686,26 @@ const App = () => {
                 {mintStatus && (
                   <div className={`mt-6 p-4 rounded-xl flex items-start gap-3 text-sm animate-in fade-in slide-in-from-top-2 ${mintStatus.type === 'success' ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'}`}>
                     {mintStatus.type === 'success' ? <CheckCircle2 size={18} className="mt-0.5 flex-shrink-0"/> : <AlertCircle size={18} className="mt-0.5 flex-shrink-0"/>}
-                    <div className="break-all font-medium leading-relaxed">{mintStatus.msg}</div>
+                    <div className="flex-1">
+                        <div className="break-all font-medium leading-relaxed">{mintStatus.msg}</div>
+                        {mintStatus.txHash && (
+                            <a 
+                              href={`${BASE_EXPLORER}/tx/${mintStatus.txHash}`} 
+                              target="_blank" 
+                              className="mt-2 inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-base-blue hover:underline"
+                            >
+                                View on Basescan <ExternalLink size={12}/>
+                            </a>
+                        )}
+                    </div>
                   </div>
                 )}
               </Card>
            </div>
         </section>
+
+        {/* Build Onchain Ad Block - Swapped down */}
+        <AdBanner />
       </main>
     </div>
   );
