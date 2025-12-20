@@ -38,25 +38,15 @@ const BASE_CHAIN_ID_DECIMAL = 8453;
 const BASE_RPC_URL = "https://mainnet.base.org"; 
 const BASE_EXPLORER = "https://basescan.org";
 
-/**
- * Official Base L2 Mainnet Addresses
- * REGISTRAR_ADDRESS updated to BaseRegistrarImplementation (ERC721) to correctly track balanceOf
- */
 const REGISTRY_ADDRESS = ethers.getAddress("0xb94704422c2a1e396835a571837aa5ae53285a95".toLowerCase());
 const RESOLVER_ADDRESS = ethers.getAddress("0xC6d566A56A1aFf6508b41f6c90ff131615583BCD".toLowerCase());
 const REGISTRAR_ADDRESS = ethers.getAddress("0xedB58850756783A09633D62624B5178619E63B48".toLowerCase()); 
 
-/**
- * Helper to convert a .base.eth name into its corresponding node hash.
- */
 const toNodeHash = (name: string): string => {
   if (!name) return ethers.ZeroHash;
   return ethers.namehash(name.toLowerCase().trim());
 };
 
-/**
- * Helper to resolve an avatar record to a displayable URL.
- */
 const resolveAvatarUrl = (name: string, record: string): string => {
   if (!record) return "";
   if (record.startsWith("http")) return record;
@@ -124,32 +114,40 @@ const PixelSolarSystem = () => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const w = canvas.width;
-    const h = canvas.height;
-    const pSize = 4;
-    const centerX = w / 2;
-    const centerY = h / 2;
+    const resize = () => {
+      canvas.width = canvas.parentElement?.clientWidth || 800;
+      canvas.height = canvas.parentElement?.clientHeight || 450;
+    };
+    resize();
+    window.addEventListener('resize', resize);
 
+    const pSize = 4;
     const COLORS = {
       BG: '#000000',
       SUN: '#FBBF24',
       BLUE: '#0052FF',
       ORANGE: '#F97316',
+      PURPLE: '#8B5CF6',
+      CYAN: '#22D3EE',
       GRAY: '#4B5563',
       WHITE: '#FFFFFF',
       GLOW: '#3B82F6'
     };
 
+    // More planets as requested
     const planets = [
-      { dist: 60, speed: 0.02, size: 6, color: COLORS.ORANGE, angle: Math.random() * Math.PI * 2 },
-      { dist: 100, speed: 0.012, size: 8, color: COLORS.BLUE, angle: Math.random() * Math.PI * 2 },
-      { dist: 150, speed: 0.008, size: 10, color: COLORS.GRAY, angle: Math.random() * Math.PI * 2 },
-      { dist: 210, speed: 0.005, size: 12, color: COLORS.WHITE, angle: Math.random() * Math.PI * 2 }
+      { dist: 60, speed: 0.022, size: 6, color: COLORS.ORANGE, angle: Math.random() * Math.PI * 2 },
+      { dist: 90, speed: 0.016, size: 8, color: COLORS.CYAN, angle: Math.random() * Math.PI * 2 },
+      { dist: 130, speed: 0.011, size: 10, color: COLORS.BLUE, angle: Math.random() * Math.PI * 2 },
+      { dist: 175, speed: 0.008, size: 7, color: COLORS.PURPLE, angle: Math.random() * Math.PI * 2 },
+      { dist: 220, speed: 0.005, size: 12, color: COLORS.WHITE, angle: Math.random() * Math.PI * 2 },
+      { dist: 280, speed: 0.003, size: 9, color: COLORS.GRAY, angle: Math.random() * Math.PI * 2 },
+      { dist: 350, speed: 0.002, size: 6, color: COLORS.BLUE, angle: Math.random() * Math.PI * 2 },
     ];
 
-    const stars = Array.from({ length: 60 }, () => ({
-      x: Math.random() * w,
-      y: Math.random() * h,
+    const stars = Array.from({ length: 150 }, () => ({
+      x: Math.random() * 3000,
+      y: Math.random() * 3000,
       size: Math.random() > 0.8 ? pSize : pSize / 2,
       blink: Math.random() * 0.05
     }));
@@ -157,15 +155,29 @@ const PixelSolarSystem = () => {
     let time = 0;
 
     const animate = () => {
+      const w = canvas.width;
+      const h = canvas.height;
+      const centerX = w / 2 + 100; // Offset center slightly for visual balance with text
+      const centerY = h / 2;
+
       time += 0.01;
       ctx.fillStyle = COLORS.BG;
       ctx.fillRect(0, 0, w, h);
 
       stars.forEach(s => {
-        const opacity = 0.3 + Math.abs(Math.sin(time * 2 + s.blink * 100)) * 0.7;
+        const opacity = 0.15 + Math.abs(Math.sin(time * 2 + s.blink * 100)) * 0.4;
         ctx.fillStyle = `rgba(255, 255, 255, ${opacity})`;
-        ctx.fillRect(Math.floor(s.x / pSize) * pSize, Math.floor(s.y / pSize) * pSize, s.size, s.size);
+        ctx.fillRect(Math.floor((s.x % w) / pSize) * pSize, Math.floor((s.y % h) / pSize) * pSize, s.size, s.size);
       });
+
+      // Sun Glow
+      const grd = ctx.createRadialGradient(centerX, centerY, 5, centerX, centerY, 80);
+      grd.addColorStop(0, 'rgba(251, 191, 36, 0.15)');
+      grd.addColorStop(1, 'rgba(251, 191, 36, 0)');
+      ctx.fillStyle = grd;
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, 80, 0, Math.PI * 2);
+      ctx.fill();
 
       ctx.fillStyle = COLORS.SUN;
       const sunSize = 32 + Math.sin(time * 3) * 2;
@@ -201,7 +213,10 @@ const PixelSolarSystem = () => {
     };
 
     requestRef.current = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(requestRef.current);
+    return () => {
+      cancelAnimationFrame(requestRef.current);
+      window.removeEventListener('resize', resize);
+    };
   }, []);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -219,42 +234,66 @@ const PixelSolarSystem = () => {
 
   return (
     <div 
-        className="w-full h-full min-h-[350px] bg-black relative overflow-hidden group"
+        className="w-full h-full min-h-[500px] bg-black relative overflow-hidden group"
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
     >
-        <canvas ref={canvasRef} width={600} height={600} className="w-full h-full object-cover transition-transform duration-700" style={{ imageRendering: 'pixelated' }} />
-        <div className="absolute top-4 right-4 flex flex-col gap-2 items-end pointer-events-none">
-             <div className="flex items-center gap-1 text-white text-[10px] font-mono opacity-80 bg-black/60 px-2 py-1 rounded-md backdrop-blur-sm border border-white/10">
-                <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></div>
-                L2 Orbit Engine
+        <canvas ref={canvasRef} className="w-full h-full object-cover transition-transform duration-[2000ms] group-hover:scale-105" style={{ imageRendering: 'pixelated' }} />
+        {/* Dark overlays for better text contrast */}
+        <div className="absolute inset-y-0 left-0 w-full md:w-3/4 bg-gradient-to-r from-black via-black/60 to-transparent pointer-events-none"></div>
+        <div className="absolute inset-0 pointer-events-none shadow-[inset_0_0_150px_rgba(0,0,0,0.8)]"></div>
+        
+        <div className="absolute top-10 right-10 flex flex-col gap-2 items-end pointer-events-none z-10">
+             <div className="flex items-center gap-2 text-white/60 text-[9px] font-black uppercase tracking-[0.4em] bg-white/5 backdrop-blur-md px-5 py-2.5 rounded-full border border-white/10">
+                <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse shadow-[0_0_10px_#4ADE80]"></div>
+                Network: Base L2
              </div>
         </div>
-        <div className="absolute inset-0 pointer-events-none bg-gradient-to-t from-black/40 via-transparent to-transparent"></div>
     </div>
   );
 };
 
 const AdBanner = () => (
-    <div className="max-w-5xl mx-auto my-16 rounded-[2.5rem] overflow-hidden bg-[#F4F5F6] grid grid-cols-1 md:grid-cols-2 shadow-sm border border-gray-200 group">
-        <div className="p-12 flex flex-col justify-center relative bg-white md:bg-transparent">
-            <div className="sm:pl-16 text-center sm:text-left z-10">
-                <h2 className="text-6xl sm:text-7xl font-[900] tracking-tighter leading-[0.85] text-black mb-8 group-hover:scale-105 transition-transform duration-500 origin-left selection:bg-black selection:text-white">
-                    Build<br/>Onchain
+    <div className="max-w-4xl mx-auto my-16 rounded-[3.5rem] overflow-hidden relative shadow-[0_50px_150px_-30px_rgba(0,82,255,0.25)] border border-white/5 group transition-all duration-700">
+        {/* Full-Block Background */}
+        <div className="absolute inset-0 z-0">
+          <PixelSolarSystem />
+        </div>
+
+        {/* Text Content Container */}
+        <div className="relative z-10 p-16 md:p-24 flex flex-col justify-center min-h-[500px]">
+            <div className="max-w-xl text-center md:text-left relative">
+                <div className="inline-block px-5 py-2 bg-blue-500/10 border border-blue-500/20 rounded-2xl mb-10 backdrop-blur-md animate-in fade-in slide-in-from-top-4 duration-700">
+                  <span className="text-[10px] font-black uppercase tracking-[0.4em] text-blue-400">Onchain Frontier</span>
+                </div>
+                
+                <h2 className="text-7xl md:text-9xl font-[900] tracking-tighter leading-[0.8] text-white mb-10 group-hover:tracking-[-0.03em] transition-all duration-1000 origin-left selection:bg-white selection:text-black">
+                    Build<br/>
+                    <span className="text-base-blue">Onchain</span>
                 </h2>
-                <div className="space-y-6">
-                    <p className="text-gray-500 font-medium max-w-xs mx-auto sm:mx-0 leading-relaxed">
-                        Join the Base ecosystem. Register your .base.eth name and start building the future of the internet.
+                
+                <div className="space-y-12">
+                    <p className="text-white/60 font-medium max-w-sm mx-auto md:mx-0 leading-relaxed text-xl animate-in fade-in slide-in-from-left-6 duration-1000">
+                        Join the fastest-growing L2. Secure your <span className="text-white font-black underline decoration-blue-500 underline-offset-8">.base.eth</span> name and start building.
                     </p>
-                    <a href="https://base.org" target="_blank" className="inline-flex items-center gap-2 bg-base-blue text-white px-8 py-4 rounded-full font-bold hover:bg-blue-700 transition-all hover:pr-10">
-                        Start Building <ArrowRight size={18} />
-                    </a>
+                    
+                    <div className="flex flex-col sm:flex-row items-center gap-6">
+                      <a 
+                        href="https://base.org" 
+                        target="_blank" 
+                        className="group/btn relative inline-flex items-center gap-4 bg-white text-black px-14 py-6 rounded-[2rem] font-black uppercase tracking-widest text-[12px] hover:bg-base-blue hover:text-white transition-all shadow-[0_20px_40px_-10px_rgba(255,255,255,0.2)] hover:shadow-[0_25px_60px_-5px_rgba(0,82,255,0.6)] active:scale-95 overflow-hidden"
+                      >
+                          <span className="relative z-10 flex items-center gap-2">
+                            Enter the Orbit <ArrowRight size={22} className="group-hover/btn:translate-x-2 transition-transform duration-300" />
+                          </span>
+                          <div className="absolute inset-0 bg-gradient-to-r from-blue-400/0 via-blue-400/20 to-blue-400/0 translate-x-[-100%] group-hover/btn:translate-x-[100%] transition-transform duration-700"></div>
+                      </a>
+                    </div>
                 </div>
             </div>
-            <span className="absolute bottom-6 left-8 text-6xl font-[900] text-gray-200 -z-0 hidden sm:block">01</span>
-        </div>
-        <div className="h-full min-h-[350px] relative border-l border-white/20">
-            <PixelSolarSystem />
+            
+            {/* Massive Background Design Watermark */}
+            <span className="absolute bottom-10 right-16 text-[18rem] font-black text-white/[0.03] -z-10 select-none leading-none pointer-events-none italic tracking-tighter">01</span>
         </div>
     </div>
 );
@@ -302,7 +341,6 @@ const App = () => {
     const activeProvider = new JsonRpcProvider(BASE_RPC_URL);
     
     try {
-      // 1. Fetch Primary Name (Reverse Resolution)
       const name = await activeProvider.lookupAddress(address);
       if (name && (name.toLowerCase().endsWith('.base.eth') || name.toLowerCase().endsWith('.eth'))) {
         const node = ethers.namehash(name);
@@ -320,7 +358,6 @@ const App = () => {
         setUserProfile(null);
       }
 
-      // 2. Fetch Root Name Balance from Official Registrar NFT Contract
       const registrar = new Contract(REGISTRAR_ADDRESS, REGISTRAR_ABI, activeProvider);
       const balance = await registrar.balanceOf(address);
       setRootNameBalance(Number(balance));
@@ -429,10 +466,6 @@ const App = () => {
     }
   };
 
-  const useMyAddress = () => {
-    if (address) setTargetAddress(address);
-  };
-
   const handleMintSubname = async () => {
     if (!window.ethereum) {
         alert('Please install a Web3 wallet.');
@@ -484,7 +517,6 @@ const App = () => {
         txHash: tx.hash
       });
 
-      // Update session list and refresh identity
       setRecentMints(prev => [{
         name: `${cleanLabel}.${cleanParent}`,
         txHash: tx.hash,
@@ -510,7 +542,7 @@ const App = () => {
   return (
     <div className="min-h-screen bg-gray-50 text-black font-sans selection:bg-base-blue selection:text-white pb-20 overflow-x-hidden">
       <nav className="w-full bg-white border-b border-gray-200 sticky top-0 z-50">
-        <div className="max-w-5xl mx-auto px-6 h-20 flex justify-between items-center">
+        <div className="max-w-4xl mx-auto px-6 h-20 flex justify-between items-center">
           <div className="flex items-center gap-3">
             <BaseLogo />
             <span className="font-bold text-xl tracking-tight">Base Names</span>
@@ -539,8 +571,7 @@ const App = () => {
         </div>
       </nav>
 
-      <main className="max-w-5xl mx-auto px-6 py-12 space-y-4">
-        {/* Search Section - Redesigned for Elegance and Full Width */}
+      <main className="max-w-4xl mx-auto px-6 py-12 space-y-4">
         <section className="pt-8 pb-12">
           <div className="text-center mb-12 animate-in fade-in slide-in-from-top-4 duration-1000">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 text-base-blue text-[10px] font-black uppercase tracking-[0.2em] mb-4 border border-blue-100">
@@ -577,23 +608,7 @@ const App = () => {
                 {isSearching ? <Loader2 className="animate-spin" size={20}/> : "Search"}
               </button>
             </form>
-            
-            {/* Visual premium background elements */}
             <div className="absolute -inset-2 bg-gradient-to-r from-blue-400/20 to-purple-400/20 rounded-[2.5rem] blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-700 -z-10"></div>
-            
-            {/* Trending / Quick Tags */}
-            <div className="mt-6 flex flex-wrap justify-center gap-3 opacity-60 group-hover:opacity-100 transition-opacity duration-300">
-               <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest pt-2.5 px-2">Trending:</span>
-               {['build.base.eth', 'vitalik.base.eth', 'base.eth', 'l2.base.eth'].map(tag => (
-                 <button 
-                    key={tag}
-                    onClick={() => { setSearchTerm(tag); handleSearch(); }}
-                    className="px-4 py-2 bg-white border border-gray-100 rounded-full text-xs font-bold text-gray-500 hover:border-base-blue hover:text-base-blue hover:shadow-sm transition-all"
-                 >
-                   {tag}
-                 </button>
-               ))}
-            </div>
           </div>
 
           {searchError && (
@@ -640,22 +655,6 @@ const App = () => {
                         <span className="px-4 py-2 bg-gray-50 rounded-xl text-xs font-mono font-bold text-gray-500 flex items-center gap-2 border border-gray-100"><Wallet size={14} className="text-base-blue"/> {searchResult.data?.address}</span>
                       </div>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                       <div className="p-6 bg-gray-50 rounded-[2rem] border border-gray-100 hover:border-blue-100 transition-colors group/link">
-                         <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-2">Twitter / X</span>
-                         <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3 text-gray-900 font-bold text-lg"><Twitter size={24} className="text-base-blue"/> {searchResult.data?.twitter || "Not connected"}</div>
-                            {searchResult.data?.twitter && <ChevronRight size={18} className="text-gray-300 group-hover/link:text-base-blue group-hover/link:translate-x-1 transition-all"/>}
-                         </div>
-                       </div>
-                       <div className="p-6 bg-gray-50 rounded-[2rem] border border-gray-100 hover:border-blue-100 transition-colors group/link">
-                         <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-2">Primary Website</span>
-                         <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3 text-gray-900 font-bold text-lg overflow-hidden"><Globe size={24} className="text-base-blue flex-shrink-0"/> <span className="truncate">{searchResult.data?.url || "No website set"}</span></div>
-                            {searchResult.data?.url && <ExternalLink size={18} className="text-gray-300 group-hover/link:text-base-blue transition-all"/>}
-                         </div>
-                       </div>
-                    </div>
                   </div>
                 </div>
               )}
@@ -663,26 +662,16 @@ const App = () => {
           )}
         </section>
 
-        {/* Subname Manager Block */}
         <section ref={subnameRef} className="max-w-4xl mx-auto pt-16 border-t border-gray-200 scroll-mt-24">
            <div className="flex flex-col md:flex-row md:items-center justify-between mb-10 gap-4">
              <div>
-               <h2 className="text-4xl font-[900] tracking-tight selection:bg-base-blue selection:text-white">Subname Manager</h2>
+               <h2 className="text-4xl font-[900] tracking-tight">Subname Manager</h2>
                <p className="text-gray-400 font-medium">Instantly provision L2 subnames for domains you own.</p>
              </div>
-             {!address ? (
-               <button onClick={connectWallet} className="bg-base-blue text-white px-8 py-4 rounded-full font-black uppercase tracking-widest text-xs shadow-xl shadow-blue-500/20 active:scale-95 transition-all">Connect to Mint</button>
-             ) : !isOnBase ? (
-               <button onClick={switchToBase} className="bg-red-500 text-white px-8 py-4 rounded-full font-black uppercase tracking-widest text-xs shadow-xl shadow-red-500/20 animate-pulse">Switch to Base</button>
-             ) : null}
            </div>
            
            <div className={`grid grid-cols-1 md:grid-cols-3 gap-8 ${!address || !isOnBase ? 'opacity-50 pointer-events-none grayscale' : ''}`}>
               <Card className="relative overflow-hidden group p-8">
-                <div className="absolute top-0 right-0 p-4 opacity-[0.03] group-hover:opacity-[0.07] group-hover:rotate-12 transition-all duration-700 pointer-events-none"><Box size={140}/></div>
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="font-black text-sm uppercase tracking-widest text-gray-400 flex items-center gap-2"><span className="w-6 h-6 rounded-full bg-black text-white flex items-center justify-center text-[10px] font-bold">1</span> Parent Node</h3>
-                </div>
                 <input 
                   type="text" 
                   value={parentName} 
@@ -690,21 +679,11 @@ const App = () => {
                   placeholder="e.g. coffee.base.eth" 
                   className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-5 py-4 text-lg font-bold outline-none focus:border-base-blue focus:bg-white focus:shadow-inner transition-all mb-4" 
                 />
-                <div className="flex items-center justify-between">
-                   <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Base Registry</p>
-                   {userProfile?.name === parentName && <span className="text-[9px] font-black uppercase tracking-widest text-base-blue flex items-center gap-1 bg-blue-50 px-2 py-0.5 rounded-md"><CheckCircle2 size={10}/> Verified Owner</span>}
-                </div>
               </Card>
 
               <Card className="relative md:col-span-2 flex flex-col h-full p-8">
-                <h3 className="font-black text-sm uppercase tracking-widest text-gray-400 mb-8 flex items-center gap-2">
-                  <span className="w-6 h-6 rounded-full bg-black text-white flex items-center justify-center text-[10px] font-bold">2</span> 
-                  Identity Parameters
-                </h3>
-                
                 <div className="flex flex-col gap-8 flex-grow">
                    <div className="w-full">
-                     <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Subname Label</label>
                      <div className="flex items-center group/input">
                        <input 
                          type="text" 
@@ -713,22 +692,13 @@ const App = () => {
                          placeholder="e.g. brew" 
                          className="flex-1 bg-gray-50 border border-gray-100 rounded-l-2xl px-5 py-4 text-lg font-bold outline-none focus:border-base-blue focus:bg-white transition-all" 
                        />
-                       <div className="bg-gray-100 border border-l-0 border-gray-100 px-6 py-4 rounded-r-2xl text-gray-400 text-sm font-black uppercase tracking-widest group-focus-within/input:bg-blue-50 group-focus-within/input:text-base-blue transition-colors">
+                       <div className="bg-gray-100 border border-l-0 border-gray-100 px-6 py-4 rounded-r-2xl text-gray-400 text-sm font-black uppercase tracking-widest">
                          .{parentName || 'base.eth'}
                        </div>
                      </div>
                    </div>
                    
                    <div className="w-full">
-                     <div className="flex items-center justify-between mb-3">
-                        <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">Resolver Address</label>
-                        <button 
-                          onClick={useMyAddress} 
-                          className="text-[10px] text-base-blue font-black uppercase tracking-[0.15em] hover:text-blue-700 transition-colors flex items-center gap-1.5"
-                        >
-                          <Zap size={12}/> My Wallet
-                        </button>
-                     </div>
                      <input 
                         type="text" 
                         value={targetAddress} 
@@ -749,30 +719,10 @@ const App = () => {
                      </button>
                    </div>
                 </div>
-
-                {mintStatus && (
-                  <div className={`mt-8 p-5 rounded-2xl flex items-start gap-4 text-sm animate-in fade-in slide-in-from-top-2 border ${mintStatus.type === 'success' ? 'bg-green-50 text-green-700 border-green-100' : 'bg-red-50 text-red-700 border-red-100'}`}>
-                    {mintStatus.type === 'success' ? <CheckCircle2 size={24} className="flex-shrink-0"/> : <AlertCircle size={24} className="flex-shrink-0"/>}
-                    <div className="flex-1">
-                        <div className="font-bold text-base mb-1">{mintStatus.type === 'success' ? "Action Successful" : "Minting Error"}</div>
-                        <div className="break-all font-medium leading-relaxed mb-3">{mintStatus.msg}</div>
-                        {mintStatus.txHash && (
-                            <a 
-                              href={`${BASE_EXPLORER}/tx/${mintStatus.txHash}`} 
-                              target="_blank" 
-                              className="inline-flex items-center gap-2 px-3 py-1.5 bg-white rounded-xl text-[10px] font-black uppercase tracking-widest text-base-blue border border-blue-100 hover:bg-blue-50 transition-all"
-                            >
-                                View Receipt <ExternalLink size={12}/>
-                            </a>
-                        )}
-                    </div>
-                  </div>
-                )}
               </Card>
            </div>
         </section>
 
-        {/* Dashboard Section */}
         {address && (
           <section className="max-w-4xl mx-auto pt-20 space-y-8 animate-in fade-in slide-in-from-bottom-6 duration-1000">
             <div className="flex items-center justify-between">
@@ -781,39 +731,33 @@ const App = () => {
                     <History size={24}/>
                   </div>
                   <div>
-                    <h2 className="text-4xl font-[900] tracking-tight selection:bg-base-blue selection:text-white">My Base Profile</h2>
-                    <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Global Identity Summary</p>
+                    <h2 className="text-4xl font-[900] tracking-tight">My Base Profile</h2>
                   </div>
                 </div>
                 <button 
                   onClick={fetchIdentityData} 
                   disabled={isRefreshing}
                   className="w-12 h-12 flex items-center justify-center bg-white hover:bg-gray-50 border border-gray-100 rounded-full transition-all text-gray-400 hover:text-base-blue shadow-sm active:scale-95 disabled:opacity-50"
-                  title="Synchronize Profile Data"
                 >
                   <RefreshCw size={24} className={isRefreshing ? "animate-spin" : ""}/>
                 </button>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {/* Identity Summary */}
                 <Card className="flex flex-col gap-8 relative overflow-hidden group p-10">
                    <div className="absolute top-0 right-0 p-8 text-gray-50 opacity-10 group-hover:scale-125 transition-transform duration-700 pointer-events-none -mr-4 -mt-4"><IdCard size={180}/></div>
                    <div className="relative z-10">
                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.25em] block mb-3">Primary Resolution</span>
                      <div className="flex items-center gap-4 flex-wrap">
-                       <h3 className={`text-3xl font-black tracking-tight ${userProfile?.name ? 'text-gray-900' : 'text-gray-300'} truncate max-w-full selection:bg-black selection:text-white`}>
+                       <h3 className={`text-3xl font-black tracking-tight ${userProfile?.name ? 'text-gray-900' : 'text-gray-300'} truncate max-w-full`}>
                          {userProfile?.name || "Unidentified Wallet"}
                        </h3>
-                       {userProfile?.name && (
-                         <span className="px-3 py-1 bg-base-blue text-white text-[10px] font-black uppercase tracking-widest rounded-lg shadow-xl shadow-blue-500/20">Active Primary</span>
-                       )}
                      </div>
                    </div>
                    
                    <div className="flex items-center justify-between pt-8 border-t border-gray-100 relative z-10">
                      <div className="flex items-center gap-5">
-                        <div className="w-14 h-14 rounded-3xl bg-blue-50 flex items-center justify-center text-base-blue border border-blue-100/30 group-hover:rotate-6 transition-transform">
+                        <div className="w-14 h-14 rounded-3xl bg-blue-50 flex items-center justify-center text-base-blue border border-blue-100/30">
                           <Layers size={28}/>
                         </div>
                         <div>
@@ -821,14 +765,9 @@ const App = () => {
                           <span className="text-3xl font-black text-gray-900 leading-none">{rootNameBalance} Names</span>
                         </div>
                      </div>
-                     <div className="text-right hidden sm:block">
-                        <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] block mb-2">Connected Address</span>
-                        <span className="text-xs font-mono font-black text-gray-400 bg-gray-50 px-3 py-1.5 rounded-xl border border-gray-100">{address.slice(0,6)}...{address.slice(-4)}</span>
-                     </div>
                    </div>
                 </Card>
 
-                {/* Session Mint History */}
                 <Card className="flex flex-col min-h-[300px] p-10">
                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.25em] block mb-8">Session Activity Log</span>
                    <div className="flex-grow space-y-4">
@@ -838,7 +777,6 @@ const App = () => {
                             <Sparkles size={40} className="opacity-30 text-base-blue"/>
                          </div>
                          <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Activity Empty</p>
-                         <p className="text-xs text-gray-300 mt-2 font-medium">Issue your first subname to track it.</p>
                        </div>
                      ) : (
                        recentMints.map((mint, i) => (
@@ -848,15 +786,13 @@ const App = () => {
                                <Box size={22} className="text-base-blue"/>
                              </div>
                              <div className="flex flex-col">
-                                <span className="text-lg font-black text-gray-900 leading-tight selection:bg-black selection:text-white">{mint.name}</span>
-                                <span className="text-[10px] text-gray-400 font-black uppercase tracking-widest">L2 Provisioned</span>
+                                <span className="text-lg font-black text-gray-900 leading-tight">{mint.name}</span>
                              </div>
                            </div>
                            <a 
                              href={`${BASE_EXPLORER}/tx/${mint.txHash}`} 
                              target="_blank" 
                              className="w-12 h-12 flex items-center justify-center bg-transparent hover:bg-gray-100 rounded-2xl transition-all text-gray-300 hover:text-base-blue"
-                             title="Audit Transaction"
                            >
                              <ExternalLink size={20}/>
                            </a>
@@ -869,12 +805,10 @@ const App = () => {
           </section>
         )}
 
-        {/* Build Onchain Ad Block */}
         <AdBanner />
       </main>
       
-      {/* Footer Branding */}
-      <footer className="max-w-5xl mx-auto px-6 py-20 border-t border-gray-100 text-center">
+      <footer className="max-w-4xl mx-auto px-6 py-20 border-t border-gray-100 text-center">
          <div className="flex flex-col items-center gap-6 opacity-30 grayscale hover:grayscale-0 hover:opacity-100 transition-all duration-1000">
             <BaseLogo />
             <p className="text-[10px] font-black uppercase tracking-[0.4em] text-gray-400">Powered by Base L2 & ENS</p>
