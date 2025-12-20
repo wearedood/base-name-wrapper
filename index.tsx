@@ -116,7 +116,7 @@ const PixelSolarSystem = () => {
 
     const resize = () => {
       canvas.width = canvas.parentElement?.clientWidth || 800;
-      canvas.height = canvas.parentElement?.clientHeight || 450;
+      canvas.height = canvas.parentElement?.clientHeight || 500;
     };
     resize();
     window.addEventListener('resize', resize);
@@ -129,25 +129,29 @@ const PixelSolarSystem = () => {
       ORANGE: '#F97316',
       PURPLE: '#8B5CF6',
       CYAN: '#22D3EE',
+      LIME: '#84CC16',
+      PINK: '#EC4899',
       GRAY: '#4B5563',
       WHITE: '#FFFFFF',
       GLOW: '#3B82F6'
     };
 
-    // More planets as requested
+    // 9 planets for a denser solar system
     const planets = [
-      { dist: 60, speed: 0.022, size: 6, color: COLORS.ORANGE, angle: Math.random() * Math.PI * 2 },
-      { dist: 90, speed: 0.016, size: 8, color: COLORS.CYAN, angle: Math.random() * Math.PI * 2 },
-      { dist: 130, speed: 0.011, size: 10, color: COLORS.BLUE, angle: Math.random() * Math.PI * 2 },
-      { dist: 175, speed: 0.008, size: 7, color: COLORS.PURPLE, angle: Math.random() * Math.PI * 2 },
-      { dist: 220, speed: 0.005, size: 12, color: COLORS.WHITE, angle: Math.random() * Math.PI * 2 },
-      { dist: 280, speed: 0.003, size: 9, color: COLORS.GRAY, angle: Math.random() * Math.PI * 2 },
-      { dist: 350, speed: 0.002, size: 6, color: COLORS.BLUE, angle: Math.random() * Math.PI * 2 },
+      { dist: 50, speed: 0.028, size: 5, color: COLORS.ORANGE, angle: Math.random() * Math.PI * 2 },
+      { dist: 80, speed: 0.019, size: 7, color: COLORS.CYAN, angle: Math.random() * Math.PI * 2 },
+      { dist: 115, speed: 0.014, size: 9, color: COLORS.BLUE, angle: Math.random() * Math.PI * 2 },
+      { dist: 155, speed: 0.010, size: 6, color: COLORS.PURPLE, angle: Math.random() * Math.PI * 2 },
+      { dist: 200, speed: 0.007, size: 12, color: COLORS.LIME, angle: Math.random() * Math.PI * 2 },
+      { dist: 250, speed: 0.005, size: 8, color: COLORS.WHITE, angle: Math.random() * Math.PI * 2 },
+      { dist: 310, speed: 0.0035, size: 10, color: COLORS.PINK, angle: Math.random() * Math.PI * 2 },
+      { dist: 380, speed: 0.0025, size: 7, color: COLORS.GRAY, angle: Math.random() * Math.PI * 2 },
+      { dist: 460, speed: 0.0018, size: 5, color: COLORS.CYAN, angle: Math.random() * Math.PI * 2 },
     ];
 
-    const stars = Array.from({ length: 150 }, () => ({
-      x: Math.random() * 3000,
-      y: Math.random() * 3000,
+    const stars = Array.from({ length: 200 }, () => ({
+      x: Math.random() * 4000,
+      y: Math.random() * 4000,
       size: Math.random() > 0.8 ? pSize : pSize / 2,
       blink: Math.random() * 0.05
     }));
@@ -157,7 +161,8 @@ const PixelSolarSystem = () => {
     const animate = () => {
       const w = canvas.width;
       const h = canvas.height;
-      const centerX = w / 2 + 100; // Offset center slightly for visual balance with text
+      // Offset center to the right for layout balance
+      const centerX = w * 0.65;
       const centerY = h / 2;
 
       time += 0.01;
@@ -165,18 +170,18 @@ const PixelSolarSystem = () => {
       ctx.fillRect(0, 0, w, h);
 
       stars.forEach(s => {
-        const opacity = 0.15 + Math.abs(Math.sin(time * 2 + s.blink * 100)) * 0.4;
+        const opacity = 0.1 + Math.abs(Math.sin(time * 1.5 + s.blink * 100)) * 0.5;
         ctx.fillStyle = `rgba(255, 255, 255, ${opacity})`;
         ctx.fillRect(Math.floor((s.x % w) / pSize) * pSize, Math.floor((s.y % h) / pSize) * pSize, s.size, s.size);
       });
 
       // Sun Glow
-      const grd = ctx.createRadialGradient(centerX, centerY, 5, centerX, centerY, 80);
-      grd.addColorStop(0, 'rgba(251, 191, 36, 0.15)');
+      const grd = ctx.createRadialGradient(centerX, centerY, 5, centerX, centerY, 100);
+      grd.addColorStop(0, 'rgba(251, 191, 36, 0.2)');
       grd.addColorStop(1, 'rgba(251, 191, 36, 0)');
       ctx.fillStyle = grd;
       ctx.beginPath();
-      ctx.arc(centerX, centerY, 80, 0, Math.PI * 2);
+      ctx.arc(centerX, centerY, 100, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.fillStyle = COLORS.SUN;
@@ -190,8 +195,8 @@ const PixelSolarSystem = () => {
         const dy = (centerY + Math.sin(p.angle) * p.dist) - mouseRef.current.y;
         const distToMouse = Math.sqrt(dx * dx + dy * dy);
         
-        if (mouseRef.current.active && distToMouse < 100) {
-          p.angle += p.speed * 2 * (1 - distToMouse / 100);
+        if (mouseRef.current.active && distToMouse < 120) {
+          p.angle += p.speed * 3 * (1 - distToMouse / 120);
           ctx.fillStyle = COLORS.GLOW;
         } else {
           ctx.fillStyle = p.color;
@@ -200,7 +205,7 @@ const PixelSolarSystem = () => {
         const px = centerX + Math.cos(p.angle) * p.dist;
         const py = centerY + Math.sin(p.angle) * p.dist;
 
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.arc(centerX, centerY, p.dist, 0, Math.PI * 2);
@@ -238,15 +243,15 @@ const PixelSolarSystem = () => {
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
     >
-        <canvas ref={canvasRef} className="w-full h-full object-cover transition-transform duration-[2000ms] group-hover:scale-105" style={{ imageRendering: 'pixelated' }} />
-        {/* Dark overlays for better text contrast */}
-        <div className="absolute inset-y-0 left-0 w-full md:w-3/4 bg-gradient-to-r from-black via-black/60 to-transparent pointer-events-none"></div>
-        <div className="absolute inset-0 pointer-events-none shadow-[inset_0_0_150px_rgba(0,0,0,0.8)]"></div>
+        <canvas ref={canvasRef} className="w-full h-full object-cover" style={{ imageRendering: 'pixelated' }} />
+        {/* Deep overlays for readability */}
+        <div className="absolute inset-y-0 left-0 w-full md:w-2/3 bg-gradient-to-r from-black via-black/70 to-transparent pointer-events-none"></div>
+        <div className="absolute inset-0 pointer-events-none shadow-[inset_0_0_200px_rgba(0,0,0,1)]"></div>
         
-        <div className="absolute top-10 right-10 flex flex-col gap-2 items-end pointer-events-none z-10">
-             <div className="flex items-center gap-2 text-white/60 text-[9px] font-black uppercase tracking-[0.4em] bg-white/5 backdrop-blur-md px-5 py-2.5 rounded-full border border-white/10">
-                <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse shadow-[0_0_10px_#4ADE80]"></div>
-                Network: Base L2
+        <div className="absolute top-10 right-10 z-10">
+             <div className="flex items-center gap-2 text-white/40 text-[9px] font-black uppercase tracking-[0.4em] bg-white/5 backdrop-blur-xl px-5 py-2.5 rounded-full border border-white/10 select-none">
+                <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse shadow-[0_0_8px_#4ADE80]"></div>
+                Active Node: Base-01
              </div>
         </div>
     </div>
@@ -254,46 +259,46 @@ const PixelSolarSystem = () => {
 };
 
 const AdBanner = () => (
-    <div className="max-w-4xl mx-auto my-16 rounded-[3.5rem] overflow-hidden relative shadow-[0_50px_150px_-30px_rgba(0,82,255,0.25)] border border-white/5 group transition-all duration-700">
-        {/* Full-Block Background */}
+    <div className="max-w-4xl mx-auto my-16 rounded-[4rem] overflow-hidden relative shadow-[0_60px_160px_-40px_rgba(0,82,255,0.4)] border border-white/10 transition-all duration-700 hover:scale-[1.01]">
+        {/* Full-Block Solar System Background */}
         <div className="absolute inset-0 z-0">
           <PixelSolarSystem />
         </div>
 
-        {/* Text Content Container */}
-        <div className="relative z-10 p-16 md:p-24 flex flex-col justify-center min-h-[500px]">
-            <div className="max-w-xl text-center md:text-left relative">
-                <div className="inline-block px-5 py-2 bg-blue-500/10 border border-blue-500/20 rounded-2xl mb-10 backdrop-blur-md animate-in fade-in slide-in-from-top-4 duration-700">
-                  <span className="text-[10px] font-black uppercase tracking-[0.4em] text-blue-400">Onchain Frontier</span>
+        {/* Foreground Content */}
+        <div className="relative z-10 p-16 md:p-28 flex flex-col justify-center min-h-[550px]">
+            <div className="max-w-xl relative">
+                <div className="inline-block px-5 py-2.5 bg-blue-500/20 border border-blue-500/30 rounded-2xl mb-12 backdrop-blur-xl animate-in fade-in slide-in-from-bottom-4 duration-700">
+                  <span className="text-[10px] font-black uppercase tracking-[0.4em] text-blue-300">Infinite Possibility</span>
                 </div>
                 
-                <h2 className="text-7xl md:text-9xl font-[900] tracking-tighter leading-[0.8] text-white mb-10 group-hover:tracking-[-0.03em] transition-all duration-1000 origin-left selection:bg-white selection:text-black">
+                <h2 className="text-8xl md:text-[10rem] font-[900] tracking-tighter leading-[0.75] text-white mb-12 select-none">
                     Build<br/>
-                    <span className="text-base-blue">Onchain</span>
+                    <span className="text-base-blue drop-shadow-[0_0_30px_rgba(0,82,255,0.3)]">Onchain</span>
                 </h2>
                 
                 <div className="space-y-12">
-                    <p className="text-white/60 font-medium max-w-sm mx-auto md:mx-0 leading-relaxed text-xl animate-in fade-in slide-in-from-left-6 duration-1000">
-                        Join the fastest-growing L2. Secure your <span className="text-white font-black underline decoration-blue-500 underline-offset-8">.base.eth</span> name and start building.
+                    <p className="text-gray-300 font-medium max-w-sm leading-relaxed text-xl md:text-2xl animate-in fade-in slide-in-from-left-8 duration-1000">
+                        Join the fastest growing L2. Register your unique <span className="text-white font-black">.base.eth</span> identity.
                     </p>
                     
-                    <div className="flex flex-col sm:flex-row items-center gap-6">
+                    <div className="flex items-center">
                       <a 
                         href="https://base.org" 
                         target="_blank" 
-                        className="group/btn relative inline-flex items-center gap-4 bg-white text-black px-14 py-6 rounded-[2rem] font-black uppercase tracking-widest text-[12px] hover:bg-base-blue hover:text-white transition-all shadow-[0_20px_40px_-10px_rgba(255,255,255,0.2)] hover:shadow-[0_25px_60px_-5px_rgba(0,82,255,0.6)] active:scale-95 overflow-hidden"
+                        className="group/btn relative inline-flex items-center gap-5 bg-white text-black px-16 py-7 rounded-[2.5rem] font-black uppercase tracking-widest text-[13px] hover:bg-base-blue hover:text-white transition-all shadow-[0_30px_60px_-15px_rgba(255,255,255,0.3)] hover:shadow-[0_40px_80px_-10px_rgba(0,82,255,0.6)] active:scale-95 overflow-hidden"
                       >
-                          <span className="relative z-10 flex items-center gap-2">
-                            Enter the Orbit <ArrowRight size={22} className="group-hover/btn:translate-x-2 transition-transform duration-300" />
+                          <span className="relative z-10 flex items-center gap-3">
+                            Start Building <ArrowRight size={24} className="group-hover/btn:translate-x-3 transition-transform duration-500" />
                           </span>
-                          <div className="absolute inset-0 bg-gradient-to-r from-blue-400/0 via-blue-400/20 to-blue-400/0 translate-x-[-100%] group-hover/btn:translate-x-[100%] transition-transform duration-700"></div>
+                          <div className="absolute inset-0 bg-gradient-to-r from-blue-400/0 via-blue-400/40 to-blue-400/0 translate-x-[-100%] group-hover/btn:translate-x-[100%] transition-transform duration-1000"></div>
                       </a>
                     </div>
                 </div>
             </div>
             
-            {/* Massive Background Design Watermark */}
-            <span className="absolute bottom-10 right-16 text-[18rem] font-black text-white/[0.03] -z-10 select-none leading-none pointer-events-none italic tracking-tighter">01</span>
+            {/* Massive Design Watermark */}
+            <span className="absolute bottom-10 right-20 text-[24rem] font-black text-white/[0.03] -z-10 select-none leading-none pointer-events-none tracking-tighter opacity-20">01</span>
         </div>
     </div>
 );
@@ -545,7 +550,7 @@ const App = () => {
         <div className="max-w-4xl mx-auto px-6 h-20 flex justify-between items-center">
           <div className="flex items-center gap-3">
             <BaseLogo />
-            <span className="font-bold text-xl tracking-tight">Base Names</span>
+            <span className="font-bold text-xl tracking-tight text-black">Base Names</span>
           </div>
           <div className="flex items-center gap-3">
             {address && (
@@ -572,10 +577,13 @@ const App = () => {
       </nav>
 
       <main className="max-w-4xl mx-auto px-6 py-12 space-y-4">
+        {/* Ad Block at Top for Visual impact */}
+        <AdBanner />
+
         <section className="pt-8 pb-12">
           <div className="text-center mb-12 animate-in fade-in slide-in-from-top-4 duration-1000">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 text-base-blue text-[10px] font-black uppercase tracking-[0.2em] mb-4 border border-blue-100">
-              <Zap size={12} className="fill-current"/> New: ENS on Base
+              <Zap size={12} className="fill-current"/> ENS on Base
             </div>
             <h1 className="text-6xl md:text-7xl font-[900] tracking-tighter mb-6 selection:bg-base-blue selection:text-white leading-[0.9]">
               Secure your <br/><span className="text-base-blue">Digital Identity.</span>
@@ -804,8 +812,6 @@ const App = () => {
             </div>
           </section>
         )}
-
-        <AdBanner />
       </main>
       
       <footer className="max-w-4xl mx-auto px-6 py-20 border-t border-gray-100 text-center">
