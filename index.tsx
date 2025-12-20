@@ -17,7 +17,11 @@ import {
   Sparkles,
   ShieldAlert,
   Settings,
-  ChevronRight
+  ChevronRight,
+  RefreshCw,
+  History,
+  IdCard,
+  Layers
 } from "lucide-react";
 
 // Add declaration for window.ethereum
@@ -35,9 +39,11 @@ const BASE_EXPLORER = "https://basescan.org";
 
 /**
  * Official Base L2 Mainnet Addresses
+ * Using lowercase input for getAddress to avoid checksum validation errors with hardcoded strings
  */
-const REGISTRY_ADDRESS = ethers.getAddress("0xb94704422c2a1e396835a571837aa5ae53285a95");
-const RESOLVER_ADDRESS = ethers.getAddress("0xC6d566A56A1aFf6508b41f6c90ff131615583BCD");
+const REGISTRY_ADDRESS = ethers.getAddress("0xb94704422c2a1e396835a571837aa5ae53285a95".toLowerCase());
+const RESOLVER_ADDRESS = ethers.getAddress("0xC6d566A56A1aFf6508b41f6c90ff131615583BCD".toLowerCase());
+const REGISTRAR_ADDRESS = ethers.getAddress("0x4cCbbf09971936369528659d48b1E0D195487B2C".toLowerCase()); // Base Registrar Controller
 
 /**
  * Helper to convert a .base.eth name into its corresponding node hash.
@@ -71,6 +77,10 @@ const RESOLVER_ABI = [
   "function addr(bytes32 node) view returns (address)"
 ];
 
+const REGISTRAR_ABI = [
+  "function balanceOf(address owner) view returns (uint256)"
+];
+
 // --- Types ---
 interface ProfileData {
   owner: string;
@@ -80,6 +90,12 @@ interface ProfileData {
   url?: string;
   address?: string;
   isMine: boolean;
+}
+
+interface MintedName {
+  name: string;
+  txHash: string;
+  timestamp: number;
 }
 
 // --- Components ---
@@ -144,24 +160,19 @@ const PixelSolarSystem = () => {
       ctx.fillStyle = COLORS.BG;
       ctx.fillRect(0, 0, w, h);
 
-      // Stars
       stars.forEach(s => {
         const opacity = 0.3 + Math.abs(Math.sin(time * 2 + s.blink * 100)) * 0.7;
         ctx.fillStyle = `rgba(255, 255, 255, ${opacity})`;
         ctx.fillRect(Math.floor(s.x / pSize) * pSize, Math.floor(s.y / pSize) * pSize, s.size, s.size);
       });
 
-      // Sun
       ctx.fillStyle = COLORS.SUN;
       const sunSize = 32 + Math.sin(time * 3) * 2;
       ctx.fillRect(Math.floor((centerX - sunSize / 2) / pSize) * pSize, Math.floor((centerY - sunSize / 2) / pSize) * pSize, sunSize, sunSize);
       
-      // Planets
-      planets.forEach((p, idx) => {
+      planets.forEach((p) => {
         p.angle += p.speed;
         
-        // Mouse interaction: speed up or glow
-        let interactiveSpeed = p.speed;
         const dx = (centerX + Math.cos(p.angle) * p.dist) - mouseRef.current.x;
         const dy = (centerY + Math.sin(p.angle) * p.dist) - mouseRef.current.y;
         const distToMouse = Math.sqrt(dx * dx + dy * dy);
@@ -176,7 +187,6 @@ const PixelSolarSystem = () => {
         const px = centerX + Math.cos(p.angle) * p.dist;
         const py = centerY + Math.sin(p.angle) * p.dist;
 
-        // Orbit paths (faint)
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
         ctx.lineWidth = 1;
         ctx.beginPath();
@@ -250,14 +260,16 @@ const AdBanner = () => (
 
 const App = () => {
   const [provider, setProvider] = useState<BrowserProvider | null>(null);
-  const [signer, setSigner] = useState<ethers.JsonRpcSigner | null>(null);
   const [address, setAddress] = useState<string | null>(null);
   const [chainId, setChainId] = useState<number | null>(null);
   const [userProfile, setUserProfile] = useState<{name?: string, avatar?: string} | null>(null);
+  const [rootNameBalance, setRootNameBalance] = useState<number>(0);
+  const [recentMints, setRecentMints] = useState<MintedName[]>([]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [isSearching, setIsSearching] = useState(false);
-  const [searchResult, setSearchResult] = useState<{name: string, available: boolean, data?: ProfileData} | null>(null);
+  const [searchResult, setSearchResult] = useState<{name: string, available: boolean, data?: ProfileData} | null>(0);
   const [searchError, setSearchError] = useState<string | null>(null);
 
   const [parentName, setParentName] = useState("");
@@ -272,18 +284,56 @@ const App = () => {
     if (!window.ethereum) return alert("Please install a Web3 wallet like Coinbase Wallet");
     try {
       const p = new BrowserProvider(window.ethereum);
-      const s = await p.getSigner();
-      const net = await p.getNetwork();
       const accounts = await p.send("eth_requestAccounts", []);
+      const net = await p.getNetwork();
       
       setProvider(p);
-      setSigner(s);
       setAddress(accounts[0]);
       setChainId(Number(net.chainId));
     } catch (err) {
       console.error(err);
     }
   };
+
+  const fetchIdentityData = async () => {
+    if (!address) return;
+    setIsRefreshing(true);
+    const activeProvider = new JsonRpcProvider(BASE_RPC_URL);
+    
+    try {
+      // 1. Fetch Primary Name (Reverse Resolution)
+      const name = await activeProvider.lookupAddress(address);
+      if (name && (name.toLowerCase().endsWith('.base.eth') || name.toLowerCase().endsWith('.eth'))) {
+        const node = ethers.namehash(name);
+        const registry = new Contract(REGISTRY_ADDRESS, REGISTRY_ABI, activeProvider);
+        const resolverAddr = await registry.resolver(node).catch(() => RESOLVER_ADDRESS);
+        
+        let avatar = "";
+        if (resolverAddr !== ethers.ZeroAddress) {
+          const resolver = new Contract(resolverAddr, RESOLVER_ABI, activeProvider);
+          const avatarRecord = await resolver.text(node, "avatar").catch(() => "");
+          avatar = resolveAvatarUrl(name, avatarRecord);
+        }
+        setUserProfile({ name, avatar });
+      } else {
+        setUserProfile(null);
+      }
+
+      // 2. Fetch Root Name Balance
+      const registrar = new Contract(REGISTRAR_ADDRESS, REGISTRAR_ABI, activeProvider);
+      const balance = await registrar.balanceOf(address);
+      setRootNameBalance(Number(balance));
+
+    } catch (err) {
+      console.error("Identity fetch error:", err);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    if (address) fetchIdentityData();
+  }, [address]);
 
   useEffect(() => {
     if (window.ethereum) {
@@ -302,38 +352,6 @@ const App = () => {
       };
     }
   }, []);
-
-  useEffect(() => {
-    const fetchUserProfile = async () => {
-      const activeProvider = new JsonRpcProvider(BASE_RPC_URL);
-      if (address) {
-        try {
-          const name = await activeProvider.lookupAddress(address);
-          if (name && (name.toLowerCase().endsWith('.base.eth') || name.toLowerCase().endsWith('.eth'))) {
-            setParentName(name);
-            const node = ethers.namehash(name);
-            const registry = new Contract(REGISTRY_ADDRESS, REGISTRY_ABI, activeProvider);
-            const resolverAddr = await registry.resolver(node).catch(() => RESOLVER_ADDRESS);
-            
-            let avatar = "";
-            if (resolverAddr !== ethers.ZeroAddress) {
-              const resolver = new Contract(resolverAddr, RESOLVER_ABI, activeProvider);
-              const avatarRecord = await resolver.text(node, "avatar").catch(() => "");
-              avatar = resolveAvatarUrl(name, avatarRecord);
-            }
-            setUserProfile({ name, avatar });
-          } else {
-            setUserProfile(null);
-          }
-        } catch (err) {
-          setUserProfile(null);
-        }
-      } else {
-        setUserProfile(null);
-      }
-    };
-    fetchUserProfile();
-  }, [address]);
 
   const switchToBase = async () => {
     if (!window.ethereum) return;
@@ -371,7 +389,6 @@ const App = () => {
 
     try {
       const node = toNodeHash(query);
-      
       const resolver = new Contract(RESOLVER_ADDRESS, RESOLVER_ABI, activeProvider);
       const resolvedAddress = await resolver.addr(node);
 
@@ -379,13 +396,7 @@ const App = () => {
         setSearchResult({ name: query, available: true });
       } else {
         const registry = new Contract(REGISTRY_ADDRESS, REGISTRY_ABI, activeProvider);
-        
-        let owner = ethers.ZeroAddress;
-        try {
-          owner = await registry.owner(node);
-        } catch (err) {
-          console.debug("Ownership lookup failed on L2 Registry");
-        }
+        let owner = await registry.owner(node).catch(() => ethers.ZeroAddress);
 
         const [avatarRecord, twitter, url] = await Promise.all([
           resolver.text(node, "avatar").catch(() => ""),
@@ -411,16 +422,19 @@ const App = () => {
         });
       }
     } catch (err) {
-      console.error(err);
-      setSearchError("Resolution failed. Please check your network and try again.");
+      setSearchError("Resolution failed. Please check your connection.");
     } finally {
       setIsSearching(false);
     }
   };
 
+  const useMyAddress = () => {
+    if (address) setTargetAddress(address);
+  };
+
   const handleMintSubname = async () => {
     if (!window.ethereum) {
-        alert('Please install a Web3 wallet to mint subnames.');
+        alert('Please install a Web3 wallet.');
         return;
     }
 
@@ -432,23 +446,16 @@ const App = () => {
       const freshSigner = await tempProvider.getSigner();
       const currentNet = await tempProvider.getNetwork();
 
-      if (!freshSigner) {
-          throw new Error("Could not obtain wallet signer. Is your wallet connected?");
-      }
-
       if (Number(currentNet.chainId) !== BASE_CHAIN_ID_DECIMAL) {
-          throw new Error("Wrong network. Please switch to Base Mainnet in your wallet.");
+          throw new Error("Please switch to Base Mainnet.");
       }
 
       const cleanParent = parentName.toLowerCase().trim();
       const cleanLabel = subLabel.toLowerCase().trim();
       const cleanTarget = targetAddress.trim();
       
-      if (!cleanParent || !cleanLabel || !cleanTarget) {
-          throw new Error("Please fill in all fields.");
-      }
-
-      if (!ethers.isAddress(cleanTarget)) throw new Error("Invalid target address.");
+      if (!cleanParent || !cleanLabel || !cleanTarget) throw new Error("Missing fields.");
+      if (!ethers.isAddress(cleanTarget)) throw new Error("Invalid address.");
 
       const parentNode = toNodeHash(cleanParent);
       const labelHash = ethers.id(cleanLabel);
@@ -457,23 +464,33 @@ const App = () => {
       const owner = await registry.owner(parentNode);
       
       if (owner.toLowerCase() !== address?.toLowerCase()) {
-        throw new Error(`Permission Denied: You do not own ${cleanParent}. Only the parent name owner can issue subnames.`);
+        throw new Error(`You don't own ${cleanParent}.`);
       }
 
       const tx = await registry.setSubnodeOwner(parentNode, labelHash, ethers.getAddress(cleanTarget));
       
       setMintStatus({ 
         type: 'success', 
-        msg: `Transaction submitted for ${cleanLabel}.${cleanParent}`,
+        msg: `Minting ${cleanLabel}.${cleanParent}...`,
         txHash: tx.hash
       });
 
       await tx.wait();
+      
       setMintStatus({ 
         type: 'success', 
         msg: `Successfully minted ${cleanLabel}.${cleanParent}!`,
         txHash: tx.hash
       });
+
+      // Update session list and refresh identity
+      setRecentMints(prev => [{
+        name: `${cleanLabel}.${cleanParent}`,
+        txHash: tx.hash,
+        timestamp: Date.now()
+      }, ...prev]);
+      
+      fetchIdentityData();
       setSubLabel("");
     } catch (err: any) {
       setMintStatus({ type: 'error', msg: err.reason || err.message || "Minting failed." });
@@ -485,14 +502,8 @@ const App = () => {
   const isOnBase = chainId === BASE_CHAIN_ID_DECIMAL;
 
   const scrollToSubname = () => {
-    if (searchResult?.name) {
-        setParentName(searchResult.name);
-    }
+    if (searchResult?.name) setParentName(searchResult.name);
     subnameRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
-
-  const useMyAddress = () => {
-    if (address) setTargetAddress(address);
   };
 
   return (
@@ -573,7 +584,7 @@ const App = () => {
                     </div>
                     <div className="mb-8 flex justify-between items-start">
                       <div>
-                        <h2 className="text-3xl font-[800] tracking-tight text-gray-900 mb-2">{searchResult.name}</h2>
+                        <h2 className="text-3xl font-[800] tracking-tight text-gray-900 mb-2 selection:bg-base-blue selection:text-white">{searchResult.name}</h2>
                         <span className="px-3 py-1 bg-gray-100 rounded-md text-xs font-mono text-gray-500 flex items-center gap-1 w-fit"><Wallet size={12}/> {searchResult.data?.address?.slice(0,6)}...{searchResult.data?.address?.slice(-4)}</span>
                       </div>
                       {searchResult.data?.isMine && (
@@ -599,7 +610,7 @@ const App = () => {
           )}
         </section>
 
-        {/* Subname Manager Block - Moved above Build Onchain */}
+        {/* Subname Manager Block */}
         <section ref={subnameRef} className="max-w-4xl mx-auto pt-10 border-t border-gray-200 scroll-mt-24">
            <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
              <div><h2 className="text-3xl font-[800] tracking-tight selection:bg-base-blue selection:text-white">Subname Manager</h2><p className="text-gray-500">Issue subnames for a name you own on Base L2.</p></div>
@@ -704,7 +715,91 @@ const App = () => {
            </div>
         </section>
 
-        {/* Build Onchain Ad Block - Swapped down */}
+        {/* Dashboard Section */}
+        {address && (
+          <section className="max-w-4xl mx-auto pt-12 space-y-6">
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <History className="text-gray-400" size={24}/>
+                  <h2 className="text-3xl font-[800] tracking-tight selection:bg-base-blue selection:text-white">My Base Identity</h2>
+                </div>
+                <button 
+                  onClick={fetchIdentityData} 
+                  disabled={isRefreshing}
+                  className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-500 disabled:opacity-50"
+                >
+                  <RefreshCw size={20} className={isRefreshing ? "animate-spin" : ""}/>
+                </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Identity Summary */}
+                <Card className="flex flex-col gap-6 relative overflow-hidden group">
+                   <div className="absolute top-0 right-0 p-4 text-gray-50 opacity-10 group-hover:scale-110 transition-transform"><IdCard size={80}/></div>
+                   <div>
+                     <span className="text-xs font-bold text-gray-400 uppercase tracking-widest block mb-1">Primary Name</span>
+                     <div className="flex items-center gap-3">
+                       <h3 className="text-2xl font-black text-gray-900 truncate max-w-[200px] selection:bg-black selection:text-white">
+                         {userProfile?.name || "No Primary Name"}
+                       </h3>
+                       {userProfile?.name && (
+                         <span className="px-2 py-0.5 bg-base-blue text-white text-[9px] font-black uppercase tracking-wider rounded-md">Primary</span>
+                       )}
+                     </div>
+                   </div>
+                   
+                   <div className="flex items-center justify-between pt-4 border-t border-gray-50">
+                     <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-base-blue">
+                          <Layers size={20}/>
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Root Names</span>
+                          <span className="text-xl font-black text-gray-900">{rootNameBalance}</span>
+                        </div>
+                     </div>
+                     <div className="text-right">
+                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Wallet Address</span>
+                        <span className="text-xs font-mono text-gray-500">{address.slice(0,6)}...{address.slice(-4)}</span>
+                     </div>
+                   </div>
+                </Card>
+
+                {/* Session Mint History */}
+                <Card className="flex flex-col min-h-[200px]">
+                   <span className="text-xs font-bold text-gray-400 uppercase tracking-widest block mb-4">Recent Session Mints</span>
+                   <div className="flex-grow space-y-3">
+                     {recentMints.length === 0 ? (
+                       <div className="flex flex-col items-center justify-center h-full text-gray-300 py-6">
+                         <Sparkles size={32} className="mb-2 opacity-50"/>
+                         <p className="text-xs font-medium">Mint subnames to see them here.</p>
+                       </div>
+                     ) : (
+                       recentMints.map((mint, i) => (
+                         <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100 group">
+                           <div className="flex items-center gap-3">
+                             <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center shadow-sm border border-gray-100">
+                               <Box size={14} className="text-base-blue"/>
+                             </div>
+                             <span className="text-sm font-bold text-gray-800 selection:bg-black selection:text-white">{mint.name}</span>
+                           </div>
+                           <a 
+                             href={`${BASE_EXPLORER}/tx/${mint.txHash}`} 
+                             target="_blank" 
+                             className="p-1.5 hover:bg-white rounded-lg transition-all text-gray-400 hover:text-base-blue shadow-none hover:shadow-sm"
+                           >
+                             <ExternalLink size={14}/>
+                           </a>
+                         </div>
+                       ))
+                     )}
+                   </div>
+                </Card>
+            </div>
+          </section>
+        )}
+
+        {/* Build Onchain Ad Block */}
         <AdBanner />
       </main>
     </div>
