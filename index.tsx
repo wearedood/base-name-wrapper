@@ -96,8 +96,25 @@ const Card = ({ children, className = "" }: { children?: React.ReactNode, classN
   </div>
 );
 
+/**
+ * Simple 1D Coherent Noise helper for organic terrain
+ */
+const noise1D = (x: number, seed: number = 42) => {
+  const i = Math.floor(x);
+  const f = x - i;
+  const fade = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
+  const h = (p: number) => {
+    const val = Math.sin(p * 127.1 + seed) * 43758.5453;
+    return val - Math.floor(val);
+  };
+  const mix = (a: number, b: number, t: number) => a + t * (b - a);
+  return mix(h(i), h(i + 1), fade(f));
+};
+
 const PixelCanvas = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const requestRef = useRef<number>(0);
+  const mouseRef = useRef({ x: -1000, y: -1000, active: false });
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -115,60 +132,123 @@ const PixelCanvas = () => {
     const C_BLUE = '#0052FF';
     const C_ORANGE = '#F97316'; 
     const C_DARK_BLUE = '#172554';
+    const C_GLOW = '#3B82F6';
 
-    ctx.fillStyle = C_BG;
-    ctx.fillRect(0, 0, w, h);
+    // Stars/Data Packets
+    const stars = Array.from({ length: 40 }, () => ({
+        x: Math.random() * cols,
+        y: Math.random() * (rows * 0.6),
+        speed: 0.05 + Math.random() * 0.1,
+        color: Math.random() > 0.85 ? C_ORANGE : C_BLUE
+    }));
 
-    const terrain = new Float32Array(cols);
-    let yOff = rows * 0.7;
-    
-    for(let i = 0; i < cols; i++) {
-        const jaggedness = (Math.random() - 0.5) * 8; 
-        const slope = (Math.random() - 0.5) * 2; 
-        yOff += jaggedness + slope;
-        if(yOff < rows * 0.2) yOff = rows * 0.2 + 2; 
-        if(yOff > rows * 0.9) yOff = rows * 0.9 - 2;
-        terrain[i] = yOff;
-    }
+    let time = 0;
 
-    for(let i = 0; i < cols; i++) {
-        const ceiling = terrain[i];
-        for(let j = 0; j < rows; j++) {
-            if (j > ceiling) {
-                const noise = Math.random();
-                if (j - ceiling < 2 && noise > 0.3) {
-                     ctx.fillStyle = C_BLUE;
-                } else if (noise > 0.65) {
-                    ctx.fillStyle = C_ORANGE;
-                } else if (noise > 0.35) {
-                    ctx.fillStyle = C_BLUE;
-                } else {
-                    ctx.fillStyle = C_DARK_BLUE;
-                }
-                ctx.fillRect(i * pSize, j * pSize, pSize, pSize);
-            }
-        }
-    }
-    
-    for(let k = 0; k < 80; k++) {
-        const rx = Math.floor(Math.random() * cols);
-        const ry = Math.floor(Math.random() * (rows * 0.6));
-        if (ry < terrain[rx]) {
-             ctx.fillStyle = Math.random() > 0.5 ? C_BLUE : C_ORANGE;
-             ctx.fillRect(rx * pSize, ry * pSize, pSize, pSize);
-        }
-    }
+    const animate = () => {
+      time += 0.015;
+      ctx.fillStyle = C_BG;
+      ctx.fillRect(0, 0, w, h);
+
+      // Draw background data packets
+      stars.forEach(s => {
+          s.x -= s.speed;
+          if (s.x < 0) s.x = cols;
+          ctx.fillStyle = s.color;
+          ctx.fillRect(Math.floor(s.x) * pSize, Math.floor(s.y) * pSize, pSize, pSize);
+      });
+
+      // Draw interactive terrain
+      for(let i = 0; i < cols; i++) {
+          // Multilayer noise for organic peaks
+          const noiseVal = (
+            noise1D(i * 0.1 + time * 0.2) * 0.6 + 
+            noise1D(i * 0.25 - time * 0.1) * 0.3 +
+            noise1D(i * 0.05) * 0.1
+          );
+          
+          const baseHeight = rows * 0.6 + noiseVal * (rows * 0.25);
+          
+          // Interaction Calculation: Wave Ripple
+          const dx = (i * pSize) - mouseRef.current.x;
+          let waveDisplacement = 0;
+          
+          if (mouseRef.current.active) {
+             const dist = Math.abs(dx);
+             if (dist < 150) {
+                 // Attenuated sine wave based on distance
+                 const attenuation = Math.pow(1 - dist / 150, 1.5);
+                 // The wave "travels" outwards from the mouse
+                 waveDisplacement = Math.sin(dist * 0.05 - time * 5) * 12 * attenuation;
+             }
+          }
+
+          const ceiling = baseHeight - (waveDisplacement / pSize);
+
+          for(let j = 0; j < rows; j++) {
+              if (j > ceiling) {
+                  const dy = (j * pSize) - mouseRef.current.y;
+                  const dist = Math.sqrt(dx * dx + dy * dy);
+                  const inGlowRadius = dist < 100;
+
+                  const r = Math.random();
+                  
+                  // Top cap of the terrain
+                  if (j - ceiling < 1.5 && r > 0.2) {
+                       ctx.fillStyle = inGlowRadius ? C_GLOW : C_BLUE;
+                  } else if (r > 0.92) {
+                      ctx.fillStyle = inGlowRadius ? C_ORANGE : C_BLUE;
+                  } else if (r > 0.7) {
+                      ctx.fillStyle = inGlowRadius ? C_BLUE : C_DARK_BLUE;
+                  } else {
+                      ctx.fillStyle = C_DARK_BLUE;
+                  }
+                  
+                  ctx.fillRect(i * pSize, j * pSize, pSize, pSize);
+              }
+          }
+      }
+
+      // Vertical Scanline near mouse
+      if (mouseRef.current.active) {
+          ctx.fillStyle = 'rgba(0, 82, 255, 0.08)';
+          const scanWidth = pSize * 2;
+          ctx.fillRect(Math.floor(mouseRef.current.x / pSize) * pSize - pSize, 0, scanWidth, h);
+      }
+
+      requestRef.current = requestAnimationFrame(animate);
+    };
+
+    requestRef.current = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(requestRef.current);
   }, []);
 
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    mouseRef.current = {
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+        active: true
+    };
+  };
+
+  const handleMouseLeave = () => {
+    mouseRef.current.active = false;
+  };
+
   return (
-    <div className="w-full h-full min-h-[300px] bg-black relative overflow-hidden">
-        <canvas ref={canvasRef} width={600} height={600} className="w-full h-full object-cover" style={{ imageRendering: 'pixelated' }} />
-        <div className="absolute top-4 right-4 flex flex-col gap-2 items-end">
-             <div className="flex items-center gap-1 text-white text-[10px] font-mono opacity-80 bg-black/50 px-2 py-1 rounded">
-                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                Live on Base
+    <div 
+        className="w-full h-full min-h-[300px] bg-black relative overflow-hidden group"
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
+    >
+        <canvas ref={canvasRef} width={600} height={600} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-[1.02]" style={{ imageRendering: 'pixelated' }} />
+        <div className="absolute top-4 right-4 flex flex-col gap-2 items-end pointer-events-none">
+             <div className="flex items-center gap-1 text-white text-[10px] font-mono opacity-80 bg-black/60 px-2 py-1 rounded-md backdrop-blur-sm border border-white/10">
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                L2 Fluid Engine
              </div>
         </div>
+        <div className="absolute inset-0 pointer-events-none bg-gradient-to-t from-black/20 to-transparent"></div>
     </div>
   );
 };
@@ -380,7 +460,6 @@ const App = () => {
     setIsMinting(true);
 
     try {
-      // Logic Fix: Explicitly get a fresh signer right before the transaction
       const tempProvider = new ethers.BrowserProvider(window.ethereum);
       const freshSigner = await tempProvider.getSigner();
       const currentNet = await tempProvider.getNetwork();
@@ -416,7 +495,6 @@ const App = () => {
 
       const registry = new Contract(REGISTRY_ADDRESS, REGISTRY_ABI, freshSigner);
       
-      // Ownership Verification on Registry
       const owner = await registry.owner(parentNode);
       console.log('Parent Owner on-chain:', owner);
       
