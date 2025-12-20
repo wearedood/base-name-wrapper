@@ -21,7 +21,8 @@ import {
   RefreshCw,
   History,
   IdCard,
-  Layers
+  Layers,
+  Zap
 } from "lucide-react";
 
 // Add declaration for window.ethereum
@@ -39,11 +40,11 @@ const BASE_EXPLORER = "https://basescan.org";
 
 /**
  * Official Base L2 Mainnet Addresses
- * Using lowercase input for getAddress to avoid checksum validation errors with hardcoded strings
+ * REGISTRAR_ADDRESS updated to BaseRegistrarImplementation (ERC721) to correctly track balanceOf
  */
 const REGISTRY_ADDRESS = ethers.getAddress("0xb94704422c2a1e396835a571837aa5ae53285a95".toLowerCase());
 const RESOLVER_ADDRESS = ethers.getAddress("0xC6d566A56A1aFf6508b41f6c90ff131615583BCD".toLowerCase());
-const REGISTRAR_ADDRESS = ethers.getAddress("0x4cCbbf09971936369528659d48b1E0D195487B2C".toLowerCase()); // Base Registrar Controller
+const REGISTRAR_ADDRESS = ethers.getAddress("0xedB58850756783A09633D62624B5178619E63B48".toLowerCase()); 
 
 /**
  * Helper to convert a .base.eth name into its corresponding node hash.
@@ -269,7 +270,7 @@ const App = () => {
 
   const [searchTerm, setSearchTerm] = useState("");
   const [isSearching, setIsSearching] = useState(false);
-  const [searchResult, setSearchResult] = useState<{name: string, available: boolean, data?: ProfileData} | null>(0);
+  const [searchResult, setSearchResult] = useState<{name: string, available: boolean, data?: ProfileData} | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
 
   const [parentName, setParentName] = useState("");
@@ -319,7 +320,7 @@ const App = () => {
         setUserProfile(null);
       }
 
-      // 2. Fetch Root Name Balance
+      // 2. Fetch Root Name Balance from Official Registrar NFT Contract
       const registrar = new Contract(REGISTRAR_ADDRESS, REGISTRAR_ABI, activeProvider);
       const balance = await registrar.balanceOf(address);
       setRootNameBalance(Number(balance));
@@ -507,7 +508,7 @@ const App = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 text-black font-sans selection:bg-base-blue selection:text-white pb-20">
+    <div className="min-h-screen bg-gray-50 text-black font-sans selection:bg-base-blue selection:text-white pb-20 overflow-x-hidden">
       <nav className="w-full bg-white border-b border-gray-200 sticky top-0 z-50">
         <div className="max-w-5xl mx-auto px-6 h-20 flex justify-between items-center">
           <div className="flex items-center gap-3">
@@ -539,68 +540,120 @@ const App = () => {
       </nav>
 
       <main className="max-w-5xl mx-auto px-6 py-12 space-y-4">
-        {/* Search Section */}
-        <section>
-          <div className="text-center mb-10">
-            <h1 className="text-5xl font-[900] tracking-tighter mb-4 selection:bg-base-blue selection:text-white">Find your <span className="text-base-blue">Base</span> identity.</h1>
-            <p className="text-gray-500 text-lg">Direct resolution for .base.eth names on the Base L2 Network.</p>
+        {/* Search Section - Redesigned for Elegance and Full Width */}
+        <section className="pt-8 pb-12">
+          <div className="text-center mb-12 animate-in fade-in slide-in-from-top-4 duration-1000">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 text-base-blue text-[10px] font-black uppercase tracking-[0.2em] mb-4 border border-blue-100">
+              <Zap size={12} className="fill-current"/> New: ENS on Base
+            </div>
+            <h1 className="text-6xl md:text-7xl font-[900] tracking-tighter mb-6 selection:bg-base-blue selection:text-white leading-[0.9]">
+              Secure your <br/><span className="text-base-blue">Digital Identity.</span>
+            </h1>
+            <p className="text-gray-400 text-lg md:text-xl font-medium max-w-2xl mx-auto leading-relaxed">
+              Register, manage, and resolve .base.eth names natively on L2.
+            </p>
           </div>
-          <div className="max-w-2xl mx-auto relative mb-12">
-            <form onSubmit={handleSearch} className="relative z-10">
-              <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search names..." className="w-full h-16 pl-6 pr-16 rounded-2xl border-2 border-transparent shadow-lg shadow-blue-900/5 focus:outline-none focus:border-base-blue/30 text-xl font-medium placeholder:text-gray-300 transition-all" />
-              <button type="submit" disabled={isSearching} className="absolute right-2 top-2 h-12 w-12 bg-base-blue hover:bg-blue-600 text-white rounded-xl flex items-center justify-center transition-colors disabled:opacity-70">{isSearching ? <Loader2 className="animate-spin" /> : <Search size={24} />}</button>
+          
+          <div className="max-w-4xl mx-auto relative group">
+            <form 
+              onSubmit={handleSearch} 
+              className="relative z-20 flex items-center bg-white p-2 rounded-[2rem] shadow-[0_20px_60px_-15px_rgba(0,82,255,0.12)] border border-gray-100 group-hover:shadow-[0_25px_70px_-10px_rgba(0,82,255,0.2)] transition-all duration-500 ease-out"
+            >
+              <div className="pl-6 text-gray-400">
+                <Search size={24} strokeWidth={2.5}/>
+              </div>
+              <input 
+                type="text" 
+                value={searchTerm} 
+                onChange={(e) => setSearchTerm(e.target.value)} 
+                placeholder="Search names (e.g. coffee.base.eth)" 
+                className="w-full h-16 pl-4 pr-4 bg-transparent focus:outline-none text-xl md:text-2xl font-bold placeholder:text-gray-200 placeholder:font-medium selection:bg-blue-100" 
+              />
+              <button 
+                type="submit" 
+                disabled={isSearching} 
+                className="h-16 px-10 bg-base-blue hover:bg-blue-600 text-white rounded-[1.5rem] font-black uppercase tracking-widest text-sm flex items-center justify-center transition-all disabled:opacity-70 active:scale-95 shadow-lg shadow-blue-500/20"
+              >
+                {isSearching ? <Loader2 className="animate-spin" size={20}/> : "Search"}
+              </button>
             </form>
-            <div className="absolute -inset-1 bg-gradient-to-r from-blue-100 to-purple-100 rounded-2xl blur opacity-50 -z-10"></div>
+            
+            {/* Visual premium background elements */}
+            <div className="absolute -inset-2 bg-gradient-to-r from-blue-400/20 to-purple-400/20 rounded-[2.5rem] blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-700 -z-10"></div>
+            
+            {/* Trending / Quick Tags */}
+            <div className="mt-6 flex flex-wrap justify-center gap-3 opacity-60 group-hover:opacity-100 transition-opacity duration-300">
+               <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest pt-2.5 px-2">Trending:</span>
+               {['build.base.eth', 'vitalik.base.eth', 'base.eth', 'l2.base.eth'].map(tag => (
+                 <button 
+                    key={tag}
+                    onClick={() => { setSearchTerm(tag); handleSearch(); }}
+                    className="px-4 py-2 bg-white border border-gray-100 rounded-full text-xs font-bold text-gray-500 hover:border-base-blue hover:text-base-blue hover:shadow-sm transition-all"
+                 >
+                   {tag}
+                 </button>
+               ))}
+            </div>
           </div>
 
-          {searchError && <div className="max-w-2xl mx-auto p-4 bg-red-50 text-red-600 rounded-xl flex items-center gap-2 mb-8 animate-in fade-in slide-in-from-bottom-2"><AlertCircle size={20} /> {searchError}</div>}
+          {searchError && (
+            <div className="max-w-2xl mx-auto mt-8 p-4 bg-red-50 text-red-600 rounded-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-2 border border-red-100 font-bold">
+              <AlertCircle size={20} /> {searchError}
+            </div>
+          )}
 
           {searchResult && (
-            <div className="max-w-2xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="max-w-4xl mx-auto mt-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
               {searchResult.available ? (
-                <Card className="flex items-center justify-between bg-green-50/50 border-green-100 border-2 overflow-hidden relative">
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-green-100/30 rounded-full -mr-16 -mt-16 blur-2xl"></div>
+                <Card className="flex items-center justify-between bg-green-50/50 border-green-100 border-2 overflow-hidden relative p-10">
+                  <div className="absolute top-0 right-0 w-64 h-64 bg-green-200/20 rounded-full -mr-24 -mt-24 blur-3xl"></div>
                   <div className="z-10">
-                    <h3 className="text-2xl font-bold text-gray-900 mb-1">{searchResult.name}</h3>
-                    <p className="text-green-600 font-bold flex items-center gap-2"><CheckCircle2 size={18} /> Available to Mint</p>
+                    <h3 className="text-4xl font-black text-gray-900 mb-2 tracking-tighter">{searchResult.name}</h3>
+                    <p className="text-green-600 font-black flex items-center gap-2 text-lg uppercase tracking-widest"><CheckCircle2 size={24} /> Available to Mint</p>
                   </div>
-                  <div className="z-10"><Sparkles className="text-base-blue animate-pulse" size={32} /></div>
+                  <div className="z-10 p-6 bg-white rounded-3xl shadow-xl shadow-green-900/5"><Sparkles className="text-base-blue animate-pulse" size={48} /></div>
                 </Card>
               ) : (
-                <div className={`bg-white rounded-[2rem] shadow-xl overflow-hidden border ${searchResult.data?.isMine ? 'border-base-blue/50 ring-4 ring-blue-50' : 'border-gray-100'}`}>
-                  <div className={`h-32 relative ${searchResult.data?.isMine ? 'bg-gradient-to-r from-base-blue to-blue-400' : 'bg-gradient-to-r from-gray-200 to-gray-300'}`}>
-                     <div className="absolute inset-0 opacity-10" style={{backgroundImage: 'radial-gradient(circle, #fff 1px, transparent 1px)', backgroundSize: '20px 20px'}}></div>
+                <div className={`bg-white rounded-[3rem] shadow-2xl overflow-hidden border ${searchResult.data?.isMine ? 'border-base-blue/50 ring-[12px] ring-blue-50' : 'border-gray-100'}`}>
+                  <div className={`h-48 relative ${searchResult.data?.isMine ? 'bg-gradient-to-r from-base-blue via-blue-500 to-indigo-500' : 'bg-gradient-to-r from-gray-200 to-gray-300'}`}>
+                     <div className="absolute inset-0 opacity-10" style={{backgroundImage: 'radial-gradient(circle, #fff 1px, transparent 1px)', backgroundSize: '24px 24px'}}></div>
                      {searchResult.data?.isMine && (
-                       <div className="absolute top-4 right-6 bg-white/20 backdrop-blur-md px-3 py-1 rounded-full text-white text-[10px] font-black uppercase tracking-wider border border-white/30 flex items-center gap-1.5">
-                         <User size={12}/> Owned by You
+                       <div className="absolute top-6 right-8 bg-white/20 backdrop-blur-md px-4 py-1.5 rounded-full text-white text-[10px] font-black uppercase tracking-[0.2em] border border-white/30 flex items-center gap-2">
+                         <User size={14}/> Primary Identity
                        </div>
                      )}
                   </div>
-                  <div className="px-8 pb-8 relative">
-                    <div className="relative -mt-12 mb-6">
-                      <div className="w-24 h-24 rounded-2xl bg-white p-1.5 shadow-md inline-block">
-                        {searchResult.data?.avatar ? <img src={searchResult.data.avatar} className="w-full h-full object-cover rounded-xl" /> : <div className="w-full h-full bg-gray-100 rounded-xl flex items-center justify-center text-gray-300"><User size={40} /></div>}
-                      </div>
-                    </div>
-                    <div className="mb-8 flex justify-between items-start">
-                      <div>
-                        <h2 className="text-3xl font-[800] tracking-tight text-gray-900 mb-2 selection:bg-base-blue selection:text-white">{searchResult.name}</h2>
-                        <span className="px-3 py-1 bg-gray-100 rounded-md text-xs font-mono text-gray-500 flex items-center gap-1 w-fit"><Wallet size={12}/> {searchResult.data?.address?.slice(0,6)}...{searchResult.data?.address?.slice(-4)}</span>
+                  <div className="px-12 pb-12 relative">
+                    <div className="relative -mt-16 mb-8 flex justify-between items-end">
+                      <div className="w-32 h-32 rounded-[2.5rem] bg-white p-2 shadow-2xl inline-block border border-gray-100">
+                        {searchResult.data?.avatar ? <img src={searchResult.data.avatar} className="w-full h-full object-cover rounded-[2rem]" /> : <div className="w-full h-full bg-gray-50 rounded-[2rem] flex items-center justify-center text-gray-200"><User size={56} /></div>}
                       </div>
                       {searchResult.data?.isMine && (
-                        <button onClick={scrollToSubname} className="bg-base-blue text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-blue-700 transition-colors flex items-center gap-2 group shadow-lg shadow-blue-200">
-                          <Settings size={14} className="group-hover:rotate-90 transition-transform duration-300"/> Manage Subnames
+                        <button onClick={scrollToSubname} className="bg-base-blue text-white h-12 px-6 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-blue-700 transition-all flex items-center gap-3 group shadow-xl shadow-blue-500/30 active:scale-95 mb-2">
+                          <Settings size={18} className="group-hover:rotate-90 transition-transform duration-500"/> Manage Subnames
                         </button>
                       )}
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                       <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
-                         <span className="text-xs font-bold text-gray-400 uppercase tracking-wider block mb-1">Twitter</span>
-                         <div className="flex items-center gap-2 text-gray-900 font-medium"><Twitter size={18} className="text-base-blue"/> {searchResult.data?.twitter || "Not set"}</div>
+                    <div className="mb-10">
+                      <h2 className="text-5xl font-black tracking-tighter text-gray-900 mb-4 selection:bg-base-blue selection:text-white">{searchResult.name}</h2>
+                      <div className="flex items-center gap-4">
+                        <span className="px-4 py-2 bg-gray-50 rounded-xl text-xs font-mono font-bold text-gray-500 flex items-center gap-2 border border-gray-100"><Wallet size={14} className="text-base-blue"/> {searchResult.data?.address}</span>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                       <div className="p-6 bg-gray-50 rounded-[2rem] border border-gray-100 hover:border-blue-100 transition-colors group/link">
+                         <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-2">Twitter / X</span>
+                         <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3 text-gray-900 font-bold text-lg"><Twitter size={24} className="text-base-blue"/> {searchResult.data?.twitter || "Not connected"}</div>
+                            {searchResult.data?.twitter && <ChevronRight size={18} className="text-gray-300 group-hover/link:text-base-blue group-hover/link:translate-x-1 transition-all"/>}
+                         </div>
                        </div>
-                       <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
-                         <span className="text-xs font-bold text-gray-400 uppercase tracking-wider block mb-1">Website</span>
-                         <div className="flex items-center gap-2 text-gray-900 font-medium overflow-hidden"><Globe size={18} className="text-base-blue flex-shrink-0"/> <span className="truncate">{searchResult.data?.url || "Not set"}</span></div>
+                       <div className="p-6 bg-gray-50 rounded-[2rem] border border-gray-100 hover:border-blue-100 transition-colors group/link">
+                         <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-2">Primary Website</span>
+                         <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3 text-gray-900 font-bold text-lg overflow-hidden"><Globe size={24} className="text-base-blue flex-shrink-0"/> <span className="truncate">{searchResult.data?.url || "No website set"}</span></div>
+                            {searchResult.data?.url && <ExternalLink size={18} className="text-gray-300 group-hover/link:text-base-blue transition-all"/>}
+                         </div>
                        </div>
                     </div>
                   </div>
@@ -611,66 +664,69 @@ const App = () => {
         </section>
 
         {/* Subname Manager Block */}
-        <section ref={subnameRef} className="max-w-4xl mx-auto pt-10 border-t border-gray-200 scroll-mt-24">
-           <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
-             <div><h2 className="text-3xl font-[800] tracking-tight selection:bg-base-blue selection:text-white">Subname Manager</h2><p className="text-gray-500">Issue subnames for a name you own on Base L2.</p></div>
+        <section ref={subnameRef} className="max-w-4xl mx-auto pt-16 border-t border-gray-200 scroll-mt-24">
+           <div className="flex flex-col md:flex-row md:items-center justify-between mb-10 gap-4">
+             <div>
+               <h2 className="text-4xl font-[900] tracking-tight selection:bg-base-blue selection:text-white">Subname Manager</h2>
+               <p className="text-gray-400 font-medium">Instantly provision L2 subnames for domains you own.</p>
+             </div>
              {!address ? (
-               <button onClick={connectWallet} className="bg-base-blue text-white px-6 py-3 rounded-full font-bold shadow-lg shadow-blue-200">Connect to Mint</button>
+               <button onClick={connectWallet} className="bg-base-blue text-white px-8 py-4 rounded-full font-black uppercase tracking-widest text-xs shadow-xl shadow-blue-500/20 active:scale-95 transition-all">Connect to Mint</button>
              ) : !isOnBase ? (
-               <button onClick={switchToBase} className="bg-red-500 text-white px-6 py-3 rounded-full font-bold">Switch to Base</button>
+               <button onClick={switchToBase} className="bg-red-500 text-white px-8 py-4 rounded-full font-black uppercase tracking-widest text-xs shadow-xl shadow-red-500/20 animate-pulse">Switch to Base</button>
              ) : null}
            </div>
            
            <div className={`grid grid-cols-1 md:grid-cols-3 gap-8 ${!address || !isOnBase ? 'opacity-50 pointer-events-none grayscale' : ''}`}>
-              <Card className="relative overflow-hidden group">
-                <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:rotate-12 transition-transform duration-500"><Box size={64}/></div>
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-bold text-lg flex items-center gap-2"><span className="w-6 h-6 rounded-full bg-black text-white flex items-center justify-center text-xs">1</span> Parent Name</h3>
+              <Card className="relative overflow-hidden group p-8">
+                <div className="absolute top-0 right-0 p-4 opacity-[0.03] group-hover:opacity-[0.07] group-hover:rotate-12 transition-all duration-700 pointer-events-none"><Box size={140}/></div>
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="font-black text-sm uppercase tracking-widest text-gray-400 flex items-center gap-2"><span className="w-6 h-6 rounded-full bg-black text-white flex items-center justify-center text-[10px] font-bold">1</span> Parent Node</h3>
                 </div>
                 <input 
                   type="text" 
                   value={parentName} 
                   onChange={(e) => setParentName(e.target.value)} 
-                  placeholder="e.g. myname.base.eth" 
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:border-base-blue transition-colors mb-2" 
+                  placeholder="e.g. coffee.base.eth" 
+                  className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-5 py-4 text-lg font-bold outline-none focus:border-base-blue focus:bg-white focus:shadow-inner transition-all mb-4" 
                 />
                 <div className="flex items-center justify-between">
-                   <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">L2 Registry Domain</p>
-                   {userProfile?.name === parentName && <span className="text-[9px] font-black uppercase text-base-blue flex items-center gap-1"><CheckCircle2 size={10}/> Own Verified</span>}
+                   <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Base Registry</p>
+                   {userProfile?.name === parentName && <span className="text-[9px] font-black uppercase tracking-widest text-base-blue flex items-center gap-1 bg-blue-50 px-2 py-0.5 rounded-md"><CheckCircle2 size={10}/> Verified Owner</span>}
                 </div>
               </Card>
 
-              <Card className="relative md:col-span-2 flex flex-col h-full">
-                <h3 className="font-bold text-lg mb-6 flex items-center gap-2">
-                  <span className="w-6 h-6 rounded-full bg-black text-white flex items-center justify-center text-xs">2</span> 
-                  Configuration
+              <Card className="relative md:col-span-2 flex flex-col h-full p-8">
+                <h3 className="font-black text-sm uppercase tracking-widest text-gray-400 mb-8 flex items-center gap-2">
+                  <span className="w-6 h-6 rounded-full bg-black text-white flex items-center justify-center text-[10px] font-bold">2</span> 
+                  Identity Parameters
                 </h3>
                 
-                <div className="flex flex-col gap-6 flex-grow">
+                <div className="flex flex-col gap-8 flex-grow">
                    <div className="w-full">
-                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Subname Label</label>
-                     <div className="flex items-center">
+                     <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Subname Label</label>
+                     <div className="flex items-center group/input">
                        <input 
                          type="text" 
                          value={subLabel} 
                          onChange={(e) => setSubLabel(e.target.value)} 
-                         placeholder="label" 
-                         className="flex-1 bg-gray-50 border border-gray-200 rounded-l-xl px-4 py-3 text-sm font-medium outline-none focus:border-base-blue" 
+                         placeholder="e.g. brew" 
+                         className="flex-1 bg-gray-50 border border-gray-100 rounded-l-2xl px-5 py-4 text-lg font-bold outline-none focus:border-base-blue focus:bg-white transition-all" 
                        />
-                       <div className="bg-gray-100 border border-l-0 border-gray-200 px-4 py-3 rounded-r-xl text-gray-500 text-sm font-semibold">
-                         .{parentName || '...'}
+                       <div className="bg-gray-100 border border-l-0 border-gray-100 px-6 py-4 rounded-r-2xl text-gray-400 text-sm font-black uppercase tracking-widest group-focus-within/input:bg-blue-50 group-focus-within/input:text-base-blue transition-colors">
+                         .{parentName || 'base.eth'}
                        </div>
                      </div>
                    </div>
                    
                    <div className="w-full">
-                     <div className="flex items-center justify-between mb-2">
-                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">Target Owner Address</label>
+                     <div className="flex items-center justify-between mb-3">
+                        <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">Resolver Address</label>
                         <button 
                           onClick={useMyAddress} 
-                          className="text-[10px] text-base-blue font-black uppercase tracking-widest hover:text-blue-700 transition-colors"
+                          className="text-[10px] text-base-blue font-black uppercase tracking-[0.15em] hover:text-blue-700 transition-colors flex items-center gap-1.5"
                         >
-                          Use my address
+                          <Zap size={12}/> My Wallet
                         </button>
                      </div>
                      <input 
@@ -678,34 +734,35 @@ const App = () => {
                         value={targetAddress} 
                         onChange={(e) => setTargetAddress(e.target.value)} 
                         placeholder="0x..." 
-                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-mono outline-none focus:border-base-blue" 
+                        className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-5 py-4 text-sm font-mono font-bold outline-none focus:border-base-blue focus:bg-white transition-all" 
                       />
                    </div>
 
-                   <div className="flex items-center justify-end mt-2 pt-4 border-t border-gray-50">
+                   <div className="flex items-center justify-end mt-4 pt-6 border-t border-gray-50">
                      <button 
                        onClick={handleMintSubname} 
                        disabled={isMinting || !subLabel || !parentName || !targetAddress} 
-                       className="h-12 px-10 bg-base-blue text-white rounded-2xl font-black uppercase tracking-wider text-xs hover:bg-blue-700 disabled:bg-gray-100 disabled:text-gray-300 transition-all flex items-center gap-3 shadow-xl shadow-blue-500/20 active:scale-95"
+                       className="h-14 px-12 bg-base-blue text-white rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-blue-600 disabled:bg-gray-50 disabled:text-gray-200 transition-all flex items-center gap-3 shadow-2xl shadow-blue-500/20 active:scale-95"
                      >
-                       {isMinting ? <Loader2 className="animate-spin" size={16}/> : <Sparkles size={16}/>}
-                       {isMinting ? "Minting..." : "Mint Subname"}
+                       {isMinting ? <Loader2 className="animate-spin" size={20}/> : <Sparkles size={20}/>}
+                       {isMinting ? "Processing..." : "Issue Subname"}
                      </button>
                    </div>
                 </div>
 
                 {mintStatus && (
-                  <div className={`mt-6 p-4 rounded-xl flex items-start gap-3 text-sm animate-in fade-in slide-in-from-top-2 ${mintStatus.type === 'success' ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'}`}>
-                    {mintStatus.type === 'success' ? <CheckCircle2 size={18} className="mt-0.5 flex-shrink-0"/> : <AlertCircle size={18} className="mt-0.5 flex-shrink-0"/>}
+                  <div className={`mt-8 p-5 rounded-2xl flex items-start gap-4 text-sm animate-in fade-in slide-in-from-top-2 border ${mintStatus.type === 'success' ? 'bg-green-50 text-green-700 border-green-100' : 'bg-red-50 text-red-700 border-red-100'}`}>
+                    {mintStatus.type === 'success' ? <CheckCircle2 size={24} className="flex-shrink-0"/> : <AlertCircle size={24} className="flex-shrink-0"/>}
                     <div className="flex-1">
-                        <div className="break-all font-medium leading-relaxed">{mintStatus.msg}</div>
+                        <div className="font-bold text-base mb-1">{mintStatus.type === 'success' ? "Action Successful" : "Minting Error"}</div>
+                        <div className="break-all font-medium leading-relaxed mb-3">{mintStatus.msg}</div>
                         {mintStatus.txHash && (
                             <a 
                               href={`${BASE_EXPLORER}/tx/${mintStatus.txHash}`} 
                               target="_blank" 
-                              className="mt-2 inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-base-blue hover:underline"
+                              className="inline-flex items-center gap-2 px-3 py-1.5 bg-white rounded-xl text-[10px] font-black uppercase tracking-widest text-base-blue border border-blue-100 hover:bg-blue-50 transition-all"
                             >
-                                View on Basescan <ExternalLink size={12}/>
+                                View Receipt <ExternalLink size={12}/>
                             </a>
                         )}
                     </div>
@@ -717,78 +774,91 @@ const App = () => {
 
         {/* Dashboard Section */}
         {address && (
-          <section className="max-w-4xl mx-auto pt-12 space-y-6">
+          <section className="max-w-4xl mx-auto pt-20 space-y-8 animate-in fade-in slide-in-from-bottom-6 duration-1000">
             <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <History className="text-gray-400" size={24}/>
-                  <h2 className="text-3xl font-[800] tracking-tight selection:bg-base-blue selection:text-white">My Base Identity</h2>
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-white border border-gray-100 flex items-center justify-center text-gray-400 shadow-sm">
+                    <History size={24}/>
+                  </div>
+                  <div>
+                    <h2 className="text-4xl font-[900] tracking-tight selection:bg-base-blue selection:text-white">My Base Profile</h2>
+                    <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Global Identity Summary</p>
+                  </div>
                 </div>
                 <button 
                   onClick={fetchIdentityData} 
                   disabled={isRefreshing}
-                  className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-500 disabled:opacity-50"
+                  className="w-12 h-12 flex items-center justify-center bg-white hover:bg-gray-50 border border-gray-100 rounded-full transition-all text-gray-400 hover:text-base-blue shadow-sm active:scale-95 disabled:opacity-50"
+                  title="Synchronize Profile Data"
                 >
-                  <RefreshCw size={20} className={isRefreshing ? "animate-spin" : ""}/>
+                  <RefreshCw size={24} className={isRefreshing ? "animate-spin" : ""}/>
                 </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 {/* Identity Summary */}
-                <Card className="flex flex-col gap-6 relative overflow-hidden group">
-                   <div className="absolute top-0 right-0 p-4 text-gray-50 opacity-10 group-hover:scale-110 transition-transform"><IdCard size={80}/></div>
-                   <div>
-                     <span className="text-xs font-bold text-gray-400 uppercase tracking-widest block mb-1">Primary Name</span>
-                     <div className="flex items-center gap-3">
-                       <h3 className="text-2xl font-black text-gray-900 truncate max-w-[200px] selection:bg-black selection:text-white">
-                         {userProfile?.name || "No Primary Name"}
+                <Card className="flex flex-col gap-8 relative overflow-hidden group p-10">
+                   <div className="absolute top-0 right-0 p-8 text-gray-50 opacity-10 group-hover:scale-125 transition-transform duration-700 pointer-events-none -mr-4 -mt-4"><IdCard size={180}/></div>
+                   <div className="relative z-10">
+                     <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.25em] block mb-3">Primary Resolution</span>
+                     <div className="flex items-center gap-4 flex-wrap">
+                       <h3 className={`text-3xl font-black tracking-tight ${userProfile?.name ? 'text-gray-900' : 'text-gray-300'} truncate max-w-full selection:bg-black selection:text-white`}>
+                         {userProfile?.name || "Unidentified Wallet"}
                        </h3>
                        {userProfile?.name && (
-                         <span className="px-2 py-0.5 bg-base-blue text-white text-[9px] font-black uppercase tracking-wider rounded-md">Primary</span>
+                         <span className="px-3 py-1 bg-base-blue text-white text-[10px] font-black uppercase tracking-widest rounded-lg shadow-xl shadow-blue-500/20">Active Primary</span>
                        )}
                      </div>
                    </div>
                    
-                   <div className="flex items-center justify-between pt-4 border-t border-gray-50">
-                     <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-base-blue">
-                          <Layers size={20}/>
+                   <div className="flex items-center justify-between pt-8 border-t border-gray-100 relative z-10">
+                     <div className="flex items-center gap-5">
+                        <div className="w-14 h-14 rounded-3xl bg-blue-50 flex items-center justify-center text-base-blue border border-blue-100/30 group-hover:rotate-6 transition-transform">
+                          <Layers size={28}/>
                         </div>
                         <div>
-                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Root Names</span>
-                          <span className="text-xl font-black text-gray-900">{rootNameBalance}</span>
+                          <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] block mb-1">Portfolio</span>
+                          <span className="text-3xl font-black text-gray-900 leading-none">{rootNameBalance} Names</span>
                         </div>
                      </div>
-                     <div className="text-right">
-                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Wallet Address</span>
-                        <span className="text-xs font-mono text-gray-500">{address.slice(0,6)}...{address.slice(-4)}</span>
+                     <div className="text-right hidden sm:block">
+                        <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] block mb-2">Connected Address</span>
+                        <span className="text-xs font-mono font-black text-gray-400 bg-gray-50 px-3 py-1.5 rounded-xl border border-gray-100">{address.slice(0,6)}...{address.slice(-4)}</span>
                      </div>
                    </div>
                 </Card>
 
                 {/* Session Mint History */}
-                <Card className="flex flex-col min-h-[200px]">
-                   <span className="text-xs font-bold text-gray-400 uppercase tracking-widest block mb-4">Recent Session Mints</span>
-                   <div className="flex-grow space-y-3">
+                <Card className="flex flex-col min-h-[300px] p-10">
+                   <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.25em] block mb-8">Session Activity Log</span>
+                   <div className="flex-grow space-y-4">
                      {recentMints.length === 0 ? (
-                       <div className="flex flex-col items-center justify-center h-full text-gray-300 py-6">
-                         <Sparkles size={32} className="mb-2 opacity-50"/>
-                         <p className="text-xs font-medium">Mint subnames to see them here.</p>
+                       <div className="flex flex-col items-center justify-center h-full text-gray-300 py-10 text-center">
+                         <div className="w-20 h-20 rounded-[2rem] bg-gray-50 flex items-center justify-center mb-6 shadow-inner border border-gray-100/50">
+                            <Sparkles size={40} className="opacity-30 text-base-blue"/>
+                         </div>
+                         <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Activity Empty</p>
+                         <p className="text-xs text-gray-300 mt-2 font-medium">Issue your first subname to track it.</p>
                        </div>
                      ) : (
                        recentMints.map((mint, i) => (
-                         <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100 group">
-                           <div className="flex items-center gap-3">
-                             <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center shadow-sm border border-gray-100">
-                               <Box size={14} className="text-base-blue"/>
+                         <div key={i} className="flex items-center justify-between p-5 bg-gray-50 rounded-3xl border border-gray-100 group hover:border-blue-200 hover:bg-white transition-all duration-300">
+                           <div className="flex items-center gap-4">
+                             <div className="w-12 h-12 rounded-2xl bg-white flex items-center justify-center shadow-sm border border-gray-100 group-hover:bg-blue-50 group-hover:border-blue-100 transition-all">
+                               <Box size={22} className="text-base-blue"/>
                              </div>
-                             <span className="text-sm font-bold text-gray-800 selection:bg-black selection:text-white">{mint.name}</span>
+                             <div className="flex flex-col">
+                                <span className="text-lg font-black text-gray-900 leading-tight selection:bg-black selection:text-white">{mint.name}</span>
+                                <span className="text-[10px] text-gray-400 font-black uppercase tracking-widest">L2 Provisioned</span>
+                             </div>
                            </div>
                            <a 
                              href={`${BASE_EXPLORER}/tx/${mint.txHash}`} 
                              target="_blank" 
-                             className="p-1.5 hover:bg-white rounded-lg transition-all text-gray-400 hover:text-base-blue shadow-none hover:shadow-sm"
+                             className="w-12 h-12 flex items-center justify-center bg-transparent hover:bg-gray-100 rounded-2xl transition-all text-gray-300 hover:text-base-blue"
+                             title="Audit Transaction"
                            >
-                             <ExternalLink size={14}/>
+                             <ExternalLink size={20}/>
                            </a>
                          </div>
                        ))
@@ -802,6 +872,14 @@ const App = () => {
         {/* Build Onchain Ad Block */}
         <AdBanner />
       </main>
+      
+      {/* Footer Branding */}
+      <footer className="max-w-5xl mx-auto px-6 py-20 border-t border-gray-100 text-center">
+         <div className="flex flex-col items-center gap-6 opacity-30 grayscale hover:grayscale-0 hover:opacity-100 transition-all duration-1000">
+            <BaseLogo />
+            <p className="text-[10px] font-black uppercase tracking-[0.4em] text-gray-400">Powered by Base L2 & ENS</p>
+         </div>
+      </footer>
     </div>
   );
 };
